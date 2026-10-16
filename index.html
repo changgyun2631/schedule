@@ -79,17 +79,17 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
 .link{background:none;border:0;color:var(--mut);text-decoration:underline;font-size:13px;padding:6px 0}
 :root{--h1:#1f4fb8;--h2:#2f6bdc}
 @media(prefers-color-scheme:dark){:root{--h1:#1b2a4d;--h2:#2a4a8a}}
-.hero{border-radius:20px;padding:20px 18px 14px;margin-bottom:14px;color:#fff;background:linear-gradient(135deg,var(--h1),var(--h2));box-shadow:0 6px 20px rgba(31,79,184,.22)}
-.hero h1{font-size:28px;margin:2px 0 14px;letter-spacing:-.3px}
-.greet{font-size:14px;opacity:.92}
-.stats{display:flex;gap:10px}
-.st{flex:1;background:rgba(255,255,255,.16);border-radius:12px;padding:8px 6px;text-align:center}
-.st b{display:block;font-size:26px;line-height:1.2}
+.hero{border-radius:16px;padding:12px 14px;margin-bottom:12px;color:#fff;background:linear-gradient(135deg,var(--h1),var(--h2));box-shadow:0 3px 10px rgba(31,79,184,.18)}
+.h-top{display:flex;align-items:baseline;justify-content:space-between;gap:4px 10px;flex-wrap:wrap}
+.hero h1{font-size:19px;margin:0;font-weight:700}
+.greet{font-size:13px;opacity:.9}
+.stats{display:flex;gap:6px;margin-top:8px}
+.st{flex:1;display:flex;align-items:baseline;justify-content:center;gap:5px;background:rgba(255,255,255,.16);border-radius:10px;padding:5px 4px}
+.st b{font-size:18px;line-height:1.2}
 .st span{font-size:13px}
 .st.bad{background:rgba(255,110,110,.42)}
-.hero .sub{color:rgba(255,255,255,.82);margin-top:10px;font-size:13px}
-.wxb{width:100%;margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:rgba(255,255,255,.16);border:0;border-radius:12px;padding:10px 12px;color:#fff;font-size:15px;text-align:left}
-.wxb .ic{font-size:22px}.wxb .r{margin-left:auto;font-size:14px}
+.wxb{width:100%;margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:rgba(255,255,255,.12);border:0;border-radius:10px;padding:5px 10px;color:#fff;font-size:14px;text-align:left;min-height:36px}
+.wxb .ic{font-size:17px}.wxb .r{margin-left:auto;font-size:13px}
 .wxp{margin-top:8px;background:rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;font-size:14px}
 .now{margin-bottom:8px}
 .hrs{display:flex;gap:4px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin}
@@ -124,8 +124,7 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
 
 <section id="app" hidden>
   <div class="hero">
-    <div class="greet" id="greet"></div>
-    <h1 id="today"></h1>
+    <div class="h-top"><h1 id="today"></h1><span class="greet" id="greet"></span></div>
     <div class="stats">
       <div class="st"><b id="s1">0</b><span>오늘</span></div>
       <div class="st" id="s2w"><b id="s2">0</b><span>밀린 일</span></div>
@@ -133,7 +132,6 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
     </div>
     <button class="wxb" id="wxb" aria-expanded="false" hidden></button>
     <div class="wxp" id="wxp" hidden></div>
-    <div class="sub" id="upd"></div>
   </div>
   <div id="stale" class="warn" hidden></div>
   <div id="chips" class="chips" role="group" aria-label="카테고리"></div>
@@ -153,7 +151,7 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
     <div class="day"><h3 id="dayh"></h3><ul id="dayl"></ul></div>
   </div>
   <div class="card"><details><summary>🔁 반복 일정 <span class="cnt" id="rn"></span></summary><ul id="rl" style="margin-top:8px"></ul></details></div>
-  <div class="hint">웹에서는 완료만 됩니다(GitHub 로그인 필요). 넣기·삭제는 텔레그램 봇에서 합니다.</div>
+  <div class="hint">웹에서는 완료만 됩니다(GitHub 로그인 필요). 넣기·삭제는 텔레그램 봇에서 합니다. <span id="upd"></span></div>
   <button class="link" id="forget" hidden>이 기기 기억 해제</button>
 </section>
 <div id="toast" role="status" hidden></div>
