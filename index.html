@@ -57,6 +57,9 @@ ul{list-style:none;margin:0;padding:0}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--acc)}
 .dot.k-work{background:var(--c-work)}.dot.k-meet{background:var(--c-meet)}.dot.k-car{background:var(--c-car)}.dot.k-me{background:var(--c-me)}.dot.k-game{background:var(--c-game)}.dot.k-etc{background:var(--c-etc)}
 .dot.d{background:var(--mut)!important;opacity:.5}
+.dot.m{background:transparent!important;border:1.5px solid var(--mut);opacity:.9}
+.p-memo{color:var(--mut);background:var(--ln)}
+.row.memo .tx,.wi.memo{color:var(--mut)}
 .pill{display:inline-block;font-size:12px;font-weight:600;line-height:1.5;border-radius:6px;padding:0 7px}
 .p-work{color:var(--c-work);background:var(--c-workbg)}.p-meet{color:var(--c-meet);background:var(--c-meetbg)}.p-car{color:var(--c-car);background:var(--c-carbg)}
 .p-me{color:var(--c-me);background:var(--c-mebg)}.p-game{color:var(--c-game);background:var(--c-gamebg)}.p-etc{color:var(--c-etc);background:var(--c-etcbg)}
@@ -196,7 +199,7 @@ async function decrypt(blob,k){
 function overdue(){
   const out=[],last={},wk=[0,6].includes(parse(T).getUTCDay());
   for(const x of data.items){
-    if(x.ev||dn(x)||x.date>=T)continue;
+    if(x.ev||x.memo||dn(x)||x.date>=T)continue;   // 경기·메모는 밀린 일이 아니다
     if(x.k==='o'){out.push(x);continue}
     if(!last[x.id]||x.date>last[x.id].date)last[x.id]=x;     // 반복은 가장 최근 회차만
   }
@@ -205,9 +208,9 @@ function overdue(){
 }
 function row(x,opt={}){
   const meta=[opt.date?fmt(x.date):'',opt.ago?`${diff(T,x.date)}일 지남`:'',x.early?'마감이 주말이라 미리':'',x.k==='m'?'매달':x.k==='w'?'매주':''].filter(Boolean).join(' · ');
-  const btn=!dn(x)&&!x.ev&&x.date<=addDays(T,1)?`<button class="dn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 완료">✔ 완료</button>`:'';   // 오늘·내일·밀린 일만(경기는 제외)
+  const btn=!dn(x)&&!x.ev&&!x.memo&&x.date<=addDays(T,1)?`<button class="dn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 완료">✔ 완료</button>`:'';   // 오늘·내일·밀린 일만(경기는 제외)
   const tm=x.t?`<b class="tm">${esc(x.t)}</b> `:'';
-  return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}"><span class="id">#${x.id}</span><div><div class="tx">${tm}${esc(x.text)}</div><div class="mt">${pill(catOf(x))}${meta?' '+esc(meta):''}</div></div>${btn}</li>`;
+  return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}${x.memo?' memo':''}"><span class="id">#${x.id}</span><div><div class="tx">${tm}${esc(x.text)}</div><div class="mt">${x.memo?'<span class="pill p-memo">📝 메모</span> ':''}${pill(catOf(x))}${meta?' '+esc(meta):''}</div></div>${btn}</li>`;
 }
 function chips(){
   const present=new Set([...data.items,...data.rules].map(catOf));
@@ -263,7 +266,7 @@ function render(){
   $('today').textContent=`${d.getUTCMonth()+1}월 ${d.getUTCDate()}일 ${WD[d.getUTCDay()]}요일`;
   const hr=(+new Date().toLocaleTimeString('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',hour12:false}).slice(0,2))%24;
   $('greet').textContent=hr<5?'늦은 시간이에요':hr<11?'좋은 아침이에요':hr<17?'좋은 오후예요':hr<21?'좋은 저녁이에요':'오늘도 수고했어요';
-  const und=ds=>data.items.filter(x=>x.date===ds&&!dn(x)).length,odAll=overdue().length;   // 맨 위 숫자는 카테고리와 상관없이 전체
+  const und=ds=>data.items.filter(x=>x.date===ds&&!dn(x)&&!x.memo).length,odAll=overdue().length;   // 맨 위 숫자는 카테고리와 상관없이 전체
   $('s1').textContent=und(T);$('s2').textContent=odAll;$('s3').textContent=und(addDays(T,1));$('s2w').classList.toggle('bad',odAll>0);
   const u=data.updated?new Date(data.updated):null;
   $('upd').textContent=u?`${u.getMonth()+1}/${u.getDate()} ${pad(u.getHours())}:${pad(u.getMinutes())} 기준`:'';
@@ -313,7 +316,7 @@ function weekly(){
   $('wkl').innerHTML=days.map(ds=>{
     const dow=parse(ds).getUTCDay(),k=wd?wd.time.indexOf(ds):-1,it=on(ds);
     const w=k>=0?`<div>${wxi(wd.weather_code[k])[1]} ${deg(wd.temperature_2m_max[k])}</div>`:'';
-    const body=it.length?it.map(x=>`<div class="wi k-${CK[catOf(x)]}${dn(x)?' done':''}">${x.t?`<b class="tm">${esc(x.t)}</b>`:''}${esc(x.text)}</div>`).join(''):'<div class="mt">일정 없음</div>';
+    const body=it.length?it.map(x=>`<div class="wi k-${CK[catOf(x)]}${dn(x)?' done':''}${x.memo?' memo':''}">${x.memo?'📝 ':''}${x.t?`<b class="tm">${esc(x.t)}</b>`:''}${esc(x.text)}</div>`).join(''):'<div class="mt">일정 없음</div>';
     return `<li class="wd${ds===T?' today':''}${dow===0?' sun':dow===6?' sat':''}"><div class="wdh"><b>${WD[dow]}${ds===T?' · 오늘':''}</b>${parse(ds).getUTCMonth()+1}/${parse(ds).getUTCDate()}${w}</div><div>${body}</div></li>`;
   }).join('');
 }
@@ -327,7 +330,7 @@ function calendar(){
   let h='';for(let i=0;i<first.getUTCDay();i++)h+='<div class="c out"></div>';
   for(let i=1;i<=n;i++){
     const ds=`${y}-${pad(m)}-${pad(i)}`,it=on(ds),dow=(first.getUTCDay()+i-1)%7;
-    const dots=it.slice(0,3).map(x=>`<i class="dot k-${CK[catOf(x)]}${dn(x)?' d':''}"></i>`).join('');
+    const dots=it.slice(0,3).map(x=>`<i class="dot k-${CK[catOf(x)]}${dn(x)?' d':''}${x.memo?' m':''}"></i>`).join('');
     h+=`<button class="c${it.length?' has':''}${ds===T?' today':''}${ds===sel?' sel':''}${dow===0?' sun':dow===6?' sat':''}" data-d="${ds}" aria-label="${fmt(ds)} 일정 ${it.length}개"><span>${i}</span><span class="dots">${dots}</span></button>`;
   }
   $('cal').innerHTML=h;
