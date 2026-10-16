@@ -25,7 +25,10 @@ button{cursor:pointer}
 .cnt{font-size:13px;font-weight:600;border-radius:99px;padding:1px 9px;background:var(--accbg);color:var(--acc)}
 .od h2{color:var(--red)}.od .cnt{background:var(--redbg);color:var(--red)}
 ul{list-style:none;margin:0;padding:0}
-.row{display:grid;grid-template-columns:2.6em 1fr;gap:8px;padding:9px 0;border-top:1px solid var(--ln)}
+.row{display:grid;grid-template-columns:2.6em 1fr auto;gap:8px;align-items:start;padding:9px 0;border-top:1px solid var(--ln)}
+.dn{border:1px solid var(--ln);background:var(--card);color:var(--ok);font-weight:600;font-size:14px;border-radius:10px;min-height:40px;padding:0 12px;white-space:nowrap}
+.dn:active{background:var(--accbg)}
+#toast{position:fixed;left:12px;right:12px;bottom:14px;max-width:616px;margin:0 auto;background:var(--tx);color:var(--bg);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.25)}
 .row:first-child{border-top:0;padding-top:2px}
 .id{color:var(--mut);font-size:13px;padding-top:2px}
 .tx{font-size:17px;line-height:1.45;word-break:keep-all}
@@ -80,7 +83,7 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
 <section id="app" hidden>
   <div class="top"><div><h1 id="today"></h1><div class="sub" id="upd"></div></div></div>
   <div id="stale" class="warn" hidden></div>
-  <div id="od" class="card od" hidden><h2>⚠ 밀린 일 <span class="cnt" id="odn"></span></h2><ul id="odl"></ul><div class="hint">끝냈으면 텔레그램에 <b>완료 번호</b></div></div>
+  <div id="od" class="card od" hidden><h2>⚠ 밀린 일 <span class="cnt" id="odn"></span></h2><ul id="odl"></ul></div>
   <div class="card"><h2>📌 오늘</h2><ul id="tl"></ul></div>
   <div class="card"><h2>🔜 내일</h2><ul id="nl"></ul></div>
   <div class="card">
@@ -90,9 +93,10 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
     <div class="day"><h3 id="dayh"></h3><ul id="dayl"></ul></div>
   </div>
   <div class="card"><details><summary>🔁 반복 일정 <span class="cnt" id="rn"></span></summary><ul id="rl" style="margin-top:8px"></ul></details></div>
-  <div class="hint">보기 전용입니다. 넣기·완료·삭제는 텔레그램 봇에서 합니다.</div>
+  <div class="hint">웹에서는 완료만 됩니다(GitHub 로그인 필요). 넣기·삭제는 텔레그램 봇에서 합니다.</div>
   <button class="link" id="forget" hidden>이 기기 기억 해제</button>
 </section>
+<div id="toast" role="status" hidden></div>
 </main>
 <script>
 'use strict';
@@ -134,8 +138,19 @@ function overdue(){
 }
 function row(x,opt={}){
   const meta=[opt.date?fmt(x.date):'',opt.ago?`${diff(T,x.date)}일 지남`:'',x.early?'마감이 주말이라 미리':'',x.k==='m'?'매달':x.k==='w'?'매주':''].filter(Boolean).join(' · ');
-  return `<li class="row${x.done?' done':''}${x.ev?' ev':''}"><span class="id">#${x.id}</span><div><div class="tx">${esc(x.text)}</div>${meta?`<div class="mt">${esc(meta)}</div>`:''}</div></li>`;
+  const btn=!x.done&&!x.ev&&x.date<=addDays(T,1)?`<button class="dn" data-id="${x.id}" aria-label="#${x.id} 완료">✔ 완료</button>`:'';   // 오늘·내일·밀린 일만(경기는 제외)
+  return `<li class="row${x.done?' done':''}${x.ev?' ev':''}"><span class="id">#${x.id}</span><div><div class="tx">${esc(x.text)}</div>${meta?`<div class="mt">${esc(meta)}</div>`:''}</div>${btn}</li>`;
 }
+// 완료 버튼: 토큰 없이, 미리 채운 GitHub 새 이슈 화면을 연다. 거기서 Submit을 누르면 내 PC의 봇이 읽어 완료 처리한다.
+const REPO='changgyun2631/schedule';
+let toastTimer;
+document.addEventListener('click',e=>{
+  const b=e.target.closest('.dn');if(!b)return;
+  const q=new URLSearchParams({title:`done ${b.dataset.id}`,body:'웹페이지에서 보낸 완료 요청입니다. 내 PC의 봇이 읽고 처리한 뒤 이 이슈를 닫습니다. 제목은 바꾸지 마세요.'});
+  window.open(`https://github.com/${REPO}/issues/new?${q}`,'_blank','noopener');
+  const t=$('toast');t.hidden=false;t.textContent=`열린 GitHub 화면 맨 아래의 "Submit new issue"를 눌러야 #${b.dataset.id} 완료가 전달돼요. 1~2분 뒤 이 목록에서 사라져요.`;
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.hidden=true,12e3);
+});
 function list(el,items,emptyMsg,opt){el.innerHTML=items.length?items.map(x=>row(x,opt)).join(''):`<li class="empty">${emptyMsg}</li>`}
 const on=d=>data.items.filter(x=>x.date===d).sort((a,b)=>a.done-b.done||a.id-b.id);
 
