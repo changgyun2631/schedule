@@ -77,6 +77,36 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
 .go:disabled{opacity:.6}
 .err{color:var(--red);min-height:1.6em;margin-top:10px;font-size:14px}
 .link{background:none;border:0;color:var(--mut);text-decoration:underline;font-size:13px;padding:6px 0}
+:root{--h1:#1f4fb8;--h2:#2f6bdc}
+@media(prefers-color-scheme:dark){:root{--h1:#1b2a4d;--h2:#2a4a8a}}
+.hero{border-radius:20px;padding:20px 18px 14px;margin-bottom:14px;color:#fff;background:linear-gradient(135deg,var(--h1),var(--h2));box-shadow:0 6px 20px rgba(31,79,184,.22)}
+.hero h1{font-size:28px;margin:2px 0 14px;letter-spacing:-.3px}
+.greet{font-size:14px;opacity:.92}
+.stats{display:flex;gap:10px}
+.st{flex:1;background:rgba(255,255,255,.16);border-radius:12px;padding:8px 6px;text-align:center}
+.st b{display:block;font-size:26px;line-height:1.2}
+.st span{font-size:13px}
+.st.bad{background:rgba(255,110,110,.42)}
+.hero .sub{color:rgba(255,255,255,.82);margin-top:10px;font-size:13px}
+.wxb{width:100%;margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:rgba(255,255,255,.16);border:0;border-radius:12px;padding:10px 12px;color:#fff;font-size:15px;text-align:left}
+.wxb .ic{font-size:22px}.wxb .r{margin-left:auto;font-size:14px}
+.wxp{margin-top:8px;background:rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;font-size:14px}
+.now{margin-bottom:8px}
+.hrs{display:flex;gap:4px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin}
+.hr{flex:none;min-width:48px;text-align:center;font-size:13px}
+.hr .ic{font-size:20px;display:block;line-height:1.5}.hr .rn{opacity:.85;font-size:12px}
+.dl{border-top:1px solid rgba(255,255,255,.25);padding-top:4px}
+.dr{display:grid;grid-template-columns:2.6em 1.6em 1fr auto;gap:6px;align-items:center;padding:4px 0}
+.dr .ic{font-size:18px}
+.wk .wd{display:grid;grid-template-columns:4.4em 1fr;gap:8px;padding:9px 0;border-top:1px solid var(--ln)}
+.wk .wd:first-child{border-top:0}
+.wdh{font-size:13px;line-height:1.35;color:var(--mut)}.wdh b{display:block;font-size:16px;color:var(--tx)}
+.wd.today{background:var(--accbg);margin:0 -8px;padding:9px 8px;border-radius:10px;border-top-color:transparent}
+.wd.today .wdh b{color:var(--acc)}.wd.sun .wdh b{color:var(--red)}.wd.sat .wdh b{color:var(--acc)}
+.wi{border-left:3px solid var(--c-etc);padding:1px 0 1px 8px;margin:3px 0;font-size:15px;line-height:1.4;word-break:keep-all}
+.wi.done{color:var(--mut);text-decoration:line-through}
+.wi .tm{margin-right:4px}
+.k-work.wi{border-left-color:var(--c-work)}.k-meet.wi{border-left-color:var(--c-meet)}.k-car.wi{border-left-color:var(--c-car)}.k-me.wi{border-left-color:var(--c-me)}.k-game.wi{border-left-color:var(--c-game)}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -93,13 +123,30 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
 </section>
 
 <section id="app" hidden>
-  <div class="top"><div><h1 id="today"></h1><div class="sub" id="upd"></div></div></div>
+  <div class="hero">
+    <div class="greet" id="greet"></div>
+    <h1 id="today"></h1>
+    <div class="stats">
+      <div class="st"><b id="s1">0</b><span>오늘</span></div>
+      <div class="st" id="s2w"><b id="s2">0</b><span>밀린 일</span></div>
+      <div class="st"><b id="s3">0</b><span>내일</span></div>
+    </div>
+    <button class="wxb" id="wxb" aria-expanded="false" hidden></button>
+    <div class="wxp" id="wxp" hidden></div>
+    <div class="sub" id="upd"></div>
+  </div>
   <div id="stale" class="warn" hidden></div>
   <div id="chips" class="chips" role="group" aria-label="카테고리"></div>
   <div id="od" class="card od" hidden><h2>⚠ 밀린 일 <span class="cnt" id="odn"></span></h2><ul id="odl"></ul></div>
   <div class="card"><h2>📌 오늘</h2><ul id="tl"></ul></div>
   <div class="card"><h2>🔜 내일</h2><ul id="nl"></ul></div>
   <div class="card">
+    <h2>📆 주간</h2>
+    <div class="cal-h"><button class="nav" id="wprev" aria-label="이전 주">‹</button><b id="wkh"></b><button class="nav" id="wnext" aria-label="다음 주">›</button></div>
+    <ul id="wkl" class="wk"></ul>
+  </div>
+  <div class="card">
+    <h2>📅 달력</h2>
     <div class="cal-h"><button class="nav" id="prev" aria-label="이전 달">‹</button><b id="mon"></b><button class="nav" id="next" aria-label="다음 달">›</button></div>
     <div class="grid" id="dow"></div>
     <div class="grid" id="cal"></div>
@@ -128,6 +175,8 @@ const b64e=u=>btoa(String.fromCharCode(...u));
 const KEY='schedule-key-v1';
 
 let data=null,key=null,T=kstToday(),viewYM=T.slice(0,7),sel=T;
+const mondayOf=s=>addDays(s,-((parse(s).getUTCDay()+6)%7));
+let weekStart=mondayOf(T),wxData=null,wxName='';
 // 카테고리: 맨 위 버튼으로 고른다(이 기기에 기억). 데이터의 c가 없으면 기타.
 const CATS=['업무','미팅','차량','개인','경기','기타'],CK={업무:'work',미팅:'meet',차량:'car',개인:'me',경기:'game',기타:'etc'};
 const catOf=x=>CK[x.c]?x.c:'기타';
@@ -185,6 +234,10 @@ const on=d=>data.items.filter(x=>x.date===d&&vis(x)).sort((a,b)=>a.done-b.done||
 function render(){
   const d=parse(T);
   $('today').textContent=`${d.getUTCMonth()+1}월 ${d.getUTCDate()}일 ${WD[d.getUTCDay()]}요일`;
+  const hr=(+new Date().toLocaleTimeString('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',hour12:false}).slice(0,2))%24;
+  $('greet').textContent=hr<5?'늦은 시간이에요':hr<11?'좋은 아침이에요':hr<17?'좋은 오후예요':hr<21?'좋은 저녁이에요':'오늘도 수고했어요';
+  const und=ds=>data.items.filter(x=>x.date===ds&&!x.done).length,odAll=overdue().length;   // 맨 위 숫자는 카테고리와 상관없이 전체
+  $('s1').textContent=und(T);$('s2').textContent=odAll;$('s3').textContent=und(addDays(T,1));$('s2w').classList.toggle('bad',odAll>0);
   const u=data.updated?new Date(data.updated):null;
   $('upd').textContent=u?`${u.getMonth()+1}/${u.getDate()} ${pad(u.getHours())}:${pad(u.getMinutes())} 기준`:'';
   const age=u?Math.floor((Date.now()-u)/864e5):0;
@@ -197,8 +250,48 @@ function render(){
   const rules=data.rules.filter(vis);
   $('rn').textContent=rules.length;
   $('rl').innerHTML=rules.map(r=>`<li class="row"><span class="id">#${r.id}</span><div><div class="tx">${esc(r.label)}</div><div class="mt">${pill(catOf(r))}</div></div></li>`).join('');
+  weekly();
   calendar();
 }
+// ── 날씨(Open-Meteo, 무료·키 없음). 위치는 암호화된 데이터 안의 wx에서 온다 ──
+const WXI=[[0,'☀️','맑음'],[1,'🌤️','대체로 맑음'],[2,'⛅','구름 조금'],[3,'☁️','흐림'],[48,'🌫️','안개'],[57,'🌦️','이슬비'],[67,'🌧️','비'],[77,'❄️','눈'],[82,'🌦️','소나기'],[86,'🌨️','눈 소나기'],[99,'⛈️','뇌우']];
+const wxi=c=>WXI.find(w=>c<=w[0])||[0,'🌡️','—'];
+const deg=n=>Math.round(n)+'°';
+async function loadWeather(){
+  const w=data&&data.wx;
+  if(!w){$('wxb').hidden=true;$('wxp').hidden=true;wxData=null;return}
+  try{
+    const q=new URLSearchParams({latitude:w.lat,longitude:w.lon,timezone:'Asia/Seoul',forecast_days:7,current:'temperature_2m,apparent_temperature,weather_code',
+      hourly:'temperature_2m,precipitation_probability,weather_code',daily:'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'});
+    const r=await fetch('https://api.open-meteo.com/v1/forecast?'+q);if(!r.ok)throw new Error(r.status);
+    wxData=await r.json();wxName=w.name||'';renderWx();weekly();
+  }catch(_){$('wxb').hidden=true;$('wxp').hidden=true;wxData=null}   // 날씨가 안 와도 일정 화면은 그대로
+}
+function renderWx(){
+  const d=wxData.daily,c=wxData.current,h=wxData.hourly,[ic,tx]=wxi(c.weather_code).slice(1);
+  $('wxb').hidden=false;
+  $('wxb').innerHTML=`<span class="ic">${ic}</span><b>${esc(wxName)} ${deg(c.temperature_2m)}</b><span class="r">${deg(d.temperature_2m_min[0])} / ${deg(d.temperature_2m_max[0])} · 강수 ${d.precipitation_probability_max[0]}% ${$('wxp').hidden?'▾':'▴'}</span>`;
+  const i0=Math.max(0,h.time.findIndex(t=>t>=c.time.slice(0,13)+':00'));
+  const hrs=h.time.slice(i0,i0+24).map((t,k)=>{const j=i0+k,hh=+t.slice(11,13);return `<div class="hr"><div>${k===0?'지금':hh+'시'}</div><span class="ic">${wxi(h.weather_code[j])[1]}</span><b>${deg(h.temperature_2m[j])}</b><div class="rn">${h.precipitation_probability[j]??0}%</div></div>`}).join('');
+  const days=d.time.map((t,k)=>`<div class="dr"><b>${k===0?'오늘':k===1?'내일':WD[parse(t).getUTCDay()]}</b><span class="ic">${wxi(d.weather_code[k])[1]}</span><span>${wxi(d.weather_code[k])[2]}</span><span>${deg(d.temperature_2m_min[k])} / ${deg(d.temperature_2m_max[k])} · 강수 ${d.precipitation_probability_max[k]}%</span></div>`).join('');
+  $('wxp').innerHTML=`<div class="now">지금 ${deg(c.temperature_2m)} · 체감 ${deg(c.apparent_temperature)} · ${tx}</div><div class="hrs">${hrs}</div><div class="dl">${days}</div>`;
+}
+$('wxb').onclick=()=>{const p=$('wxp');p.hidden=!p.hidden;$('wxb').setAttribute('aria-expanded',String(!p.hidden));if(wxData)renderWx()};
+// ── 주간: 월~일 한 주를 줄마다 ──
+function weekly(){
+  const days=[...Array(7)].map((_,i)=>addDays(weekStart,i));
+  $('wkh').textContent=`${fmt(days[0])} ~ ${fmt(days[6])}`;
+  $('wprev').disabled=weekStart<=mondayOf(addDays(T,-41));$('wnext').disabled=weekStart>=mondayOf(addDays(T,120));
+  const wd=wxData&&wxData.daily;
+  $('wkl').innerHTML=days.map(ds=>{
+    const dow=parse(ds).getUTCDay(),k=wd?wd.time.indexOf(ds):-1,it=on(ds);
+    const w=k>=0?`<div>${wxi(wd.weather_code[k])[1]} ${deg(wd.temperature_2m_max[k])}</div>`:'';
+    const body=it.length?it.map(x=>`<div class="wi k-${CK[catOf(x)]}${x.done?' done':''}">${x.t?`<b class="tm">${esc(x.t)}</b>`:''}${esc(x.text)}</div>`).join(''):'<div class="mt">일정 없음</div>';
+    return `<li class="wd${ds===T?' today':''}${dow===0?' sun':dow===6?' sat':''}"><div class="wdh"><b>${WD[dow]}${ds===T?' · 오늘':''}</b>${parse(ds).getUTCMonth()+1}/${parse(ds).getUTCDate()}${w}</div><div>${body}</div></li>`;
+  }).join('');
+}
+$('wprev').onclick=()=>{weekStart=addDays(weekStart,-7);weekly()};
+$('wnext').onclick=()=>{weekStart=addDays(weekStart,7);weekly()};
 function calendar(){
   const [y,m]=viewYM.split('-').map(Number),first=new Date(Date.UTC(y,m-1,1)),n=new Date(Date.UTC(y,m,0)).getUTCDate();
   $('mon').textContent=`${y}년 ${m}월`;
@@ -218,7 +311,7 @@ $('cal').onclick=e=>{const b=e.target.closest('.c[data-d]');if(b){sel=b.dataset.
 $('prev').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m-2,1))).slice(0,7);calendar()};
 $('next').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m,1))).slice(0,7);calendar()};
 
-function showApp(remembered){$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;render()}
+function showApp(remembered){$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;render();loadWeather()}
 function showLock(msg){$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
 
 $('f').onsubmit=async e=>{
@@ -237,7 +330,8 @@ async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용�
   if(!key)return;
   try{const blob=await fetchBlob();data=await decrypt(blob,key);render()}catch(_){/* 네트워크 실패는 이전 화면 유지 */}
 }
-setInterval(()=>{const t=kstToday();if(t!==T&&data){T=t;viewYM=t.slice(0,7);sel=t;render()}},60e3);
+setInterval(()=>{const t=kstToday();if(t!==T&&data){T=t;viewYM=t.slice(0,7);sel=t;weekStart=mondayOf(t);render()}},60e3);
+setInterval(()=>{if(key)loadWeather()},18e5);   // 날씨는 30분마다
 setInterval(reload,300e3);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)reload()});
 
