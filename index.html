@@ -30,6 +30,7 @@ ul{list-style:none;margin:0;padding:0}
 .row{display:grid;grid-template-columns:2.6em 1fr auto;gap:8px;align-items:start;padding:9px 0;border-top:1px solid var(--ln)}
 .dn{border:1px solid var(--ln);background:var(--card);color:var(--ok);font-weight:600;font-size:14px;border-radius:10px;min-height:40px;padding:0 12px;white-space:nowrap}
 .dn:active{background:var(--accbg)}
+.undo{margin-left:10px;background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;padding:0 12px;min-height:34px;font-weight:600}
 #toast{position:fixed;left:12px;right:12px;bottom:14px;max-width:616px;margin:0 auto;background:var(--tx);color:var(--bg);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.25)}
 .row:first-child{border-top:0;padding-top:2px}
 .id{color:var(--mut);font-size:13px;padding-top:2px}
@@ -195,7 +196,7 @@ async function decrypt(blob,k){
 function overdue(){
   const out=[],last={},wk=[0,6].includes(parse(T).getUTCDay());
   for(const x of data.items){
-    if(x.ev||x.done||x.date>=T)continue;
+    if(x.ev||dn(x)||x.date>=T)continue;
     if(x.k==='o'){out.push(x);continue}
     if(!last[x.id]||x.date>last[x.id].date)last[x.id]=x;     // 반복은 가장 최근 회차만
   }
@@ -204,37 +205,65 @@ function overdue(){
 }
 function row(x,opt={}){
   const meta=[opt.date?fmt(x.date):'',opt.ago?`${diff(T,x.date)}일 지남`:'',x.early?'마감이 주말이라 미리':'',x.k==='m'?'매달':x.k==='w'?'매주':''].filter(Boolean).join(' · ');
-  const btn=!x.done&&!x.ev&&x.date<=addDays(T,1)?`<button class="dn" data-id="${x.id}" aria-label="#${x.id} 완료">✔ 완료</button>`:'';   // 오늘·내일·밀린 일만(경기는 제외)
+  const btn=!dn(x)&&!x.ev&&x.date<=addDays(T,1)?`<button class="dn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 완료">✔ 완료</button>`:'';   // 오늘·내일·밀린 일만(경기는 제외)
   const tm=x.t?`<b class="tm">${esc(x.t)}</b> `:'';
-  return `<li class="row${x.done?' done':''}${x.ev?' ev':''}"><span class="id">#${x.id}</span><div><div class="tx">${tm}${esc(x.text)}</div><div class="mt">${pill(catOf(x))}${meta?' '+esc(meta):''}</div></div>${btn}</li>`;
+  return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}"><span class="id">#${x.id}</span><div><div class="tx">${tm}${esc(x.text)}</div><div class="mt">${pill(catOf(x))}${meta?' '+esc(meta):''}</div></div>${btn}</li>`;
 }
 function chips(){
   const present=new Set([...data.items,...data.rules].map(catOf));
   if(cat&&!present.has(cat))cat='';
-  const soon=[...overdue(),...data.items.filter(x=>!x.done&&(x.date===T||x.date===addDays(T,1)))],cnt={};
+  const soon=[...overdue(),...data.items.filter(x=>!dn(x)&&(x.date===T||x.date===addDays(T,1)))],cnt={};
   soon.forEach(x=>cnt[catOf(x)]=(cnt[catOf(x)]||0)+1);
   $('chips').innerHTML=[''].concat(CATS.filter(c=>present.has(c))).map(c=>`<button class="chip${c===cat?' on':''}" data-c="${c}" aria-pressed="${c===cat}">${c||'전체'}${c&&cnt[c]?`<i>${cnt[c]}</i>`:''}</button>`).join('');
 }
 $('chips').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;cat=b.dataset.c;try{localStorage.setItem('schedule-cat',cat)}catch(_){}render()};
-// 완료 버튼: 토큰 없이, 미리 채운 GitHub 새 이슈 화면을 연다. 거기서 Submit을 누르면 내 PC의 봇이 읽어 완료 처리한다.
-const REPO='changgyun2631/schedule';
-let toastTimer;
+// 완료: 한 번 탭 → 바로 끝난 것으로 보이고 5초 안에 '되돌리기' 가능 → 5초 뒤 ntfy 비밀 주소로 서명한 요청을 보낸다(내 PC의 봇이 읽어 처리).
+// 열쇠(data.done)가 없으면 예전 방식(GitHub 이슈 화면)으로 대신한다.
+const REPO='changgyun2631/schedule',pk=x=>x.id+'|'+x.date;
+const pend=new Map();   // 키 -> 누른 시각. 새 데이터에서 끝난 것으로 확인되기 전까지 화면에서 끝난 것으로 보인다
+try{for(const [k,t] of Object.entries(JSON.parse(localStorage.getItem('schedule-pend')||'{}')))if(Date.now()-t<9e5)pend.set(k,t)}catch(_){}
+const savePend=()=>{try{localStorage.setItem('schedule-pend',JSON.stringify(Object.fromEntries(pend)))}catch(_){}};
+function dn(x){return !!x.done||pend.has(pk(x))}
+function prunePend(){   // 새 데이터에서 끝났거나 15분이 지난 것은 마스크를 푼다
+  const by=new Map(data.items.map(x=>[pk(x),x]));
+  for(const [k,t] of [...pend])if(!by.has(k)||by.get(k).done||Date.now()-t>9e5)pend.delete(k);
+  savePend();
+}
+let toastTimer;const timers=new Map();
+function toast(html,ms){const t=$('toast');t.hidden=false;t.innerHTML=html;clearTimeout(toastTimer);if(ms)toastTimer=setTimeout(()=>t.hidden=true,ms)}
+const hex=u=>[...new Uint8Array(u)].map(b=>b.toString(16).padStart(2,'0')).join('');
+async function sendDone(id){
+  const ts=Math.floor(Date.now()/1000),k=await crypto.subtle.importKey('raw',new TextEncoder().encode(data.done.key),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const sig=hex(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(`${id}.${ts}`)));
+  const r=await fetch('https://ntfy.sh/'+data.done.topic,{method:'POST',body:JSON.stringify({a:'done',id,ts,sig})});
+  if(!r.ok)throw new Error(r.status);
+}
 document.addEventListener('click',e=>{
+  const u=e.target.closest('.undo');
+  if(u){const k=u.dataset.k;clearTimeout(timers.get(k));timers.delete(k);pend.delete(k);savePend();$('toast').hidden=true;render();return}
   const b=e.target.closest('.dn');if(!b)return;
-  const q=new URLSearchParams({title:`done ${b.dataset.id}`,body:'웹페이지에서 보낸 완료 요청입니다. 내 PC의 봇이 읽고 처리한 뒤 이 이슈를 닫습니다. 제목은 바꾸지 마세요.'});
-  window.open(`https://github.com/${REPO}/issues/new?${q}`,'_blank','noopener');
-  const t=$('toast');t.hidden=false;t.textContent=`열린 GitHub 화면 맨 아래의 "Submit new issue"를 눌러야 #${b.dataset.id} 완료가 전달돼요. 1~2분 뒤 이 목록에서 사라져요.`;
-  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.hidden=true,12e3);
+  const id=+b.dataset.id,k=id+'|'+b.dataset.d;
+  if(!(data.done&&data.done.topic)){   // 열쇠가 없으면 예전 방식
+    const q=new URLSearchParams({title:`done ${id}`,body:'웹페이지에서 보낸 완료 요청입니다.'});
+    window.open(`https://github.com/${REPO}/issues/new?${q}`,'_blank','noopener');return}
+  pend.set(k,Date.now());savePend();render();
+  toast(`#${id} 완료 처리해요 <button class="undo" data-k="${k}">되돌리기</button>`);
+  timers.set(k,setTimeout(async()=>{
+    timers.delete(k);
+    try{await sendDone(id);toast(`#${id} 완료를 보냈어요 · 곧 반영돼요`,4000)}
+    catch(_){pend.delete(k);savePend();render();toast(`보내지 못했어요. 텔레그램에서 "완료 ${id}"로 해 주세요`,8000)}
+  },5000));
 });
 function list(el,items,emptyMsg,opt){el.innerHTML=items.length?items.map(x=>row(x,opt)).join(''):`<li class="empty">${emptyMsg}</li>`}
-const on=d=>data.items.filter(x=>x.date===d&&vis(x)).sort((a,b)=>a.done-b.done||(a.t||'99:99').localeCompare(b.t||'99:99')||a.id-b.id);   // 끝낸 건 아래, 시각 있는 것 먼저
+const on=d=>data.items.filter(x=>x.date===d&&vis(x)).sort((a,b)=>(+dn(a))-(+dn(b))||(a.t||'99:99').localeCompare(b.t||'99:99')||a.id-b.id);   // 끝낸 건 아래, 시각 있는 것 먼저
 
 function render(){
+  prunePend();
   const d=parse(T);
   $('today').textContent=`${d.getUTCMonth()+1}월 ${d.getUTCDate()}일 ${WD[d.getUTCDay()]}요일`;
   const hr=(+new Date().toLocaleTimeString('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',hour12:false}).slice(0,2))%24;
   $('greet').textContent=hr<5?'늦은 시간이에요':hr<11?'좋은 아침이에요':hr<17?'좋은 오후예요':hr<21?'좋은 저녁이에요':'오늘도 수고했어요';
-  const und=ds=>data.items.filter(x=>x.date===ds&&!x.done).length,odAll=overdue().length;   // 맨 위 숫자는 카테고리와 상관없이 전체
+  const und=ds=>data.items.filter(x=>x.date===ds&&!dn(x)).length,odAll=overdue().length;   // 맨 위 숫자는 카테고리와 상관없이 전체
   $('s1').textContent=und(T);$('s2').textContent=odAll;$('s3').textContent=und(addDays(T,1));$('s2w').classList.toggle('bad',odAll>0);
   const u=data.updated?new Date(data.updated):null;
   $('upd').textContent=u?`${u.getMonth()+1}/${u.getDate()} ${pad(u.getHours())}:${pad(u.getMinutes())} 기준`:'';
@@ -242,7 +271,7 @@ function render(){
   $('stale').hidden=age<3;$('stale').textContent=`⚠ ${age}일째 새 내용이 안 올라왔어요(PC가 꺼져 있을 수 있어요). 날짜는 맞게 표시됩니다.`;
   chips();
   const od=overdue().filter(vis);$('od').hidden=!od.length;$('odn').textContent=od.length;list($('odl'),od,'',{date:1,ago:1});
-  const t=on(T).filter(x=>!x.done),n=on(addDays(T,1)).filter(x=>!x.done);
+  const t=on(T).filter(x=>!dn(x)),n=on(addDays(T,1)).filter(x=>!dn(x));
   list($('tl'),t,on(T).length?'오늘 할 일을 모두 끝냈어요 ✔':'오늘은 비어 있어요');
   list($('nl'),n,'내일은 비어 있어요');
   const rules=data.rules.filter(vis);
@@ -284,7 +313,7 @@ function weekly(){
   $('wkl').innerHTML=days.map(ds=>{
     const dow=parse(ds).getUTCDay(),k=wd?wd.time.indexOf(ds):-1,it=on(ds);
     const w=k>=0?`<div>${wxi(wd.weather_code[k])[1]} ${deg(wd.temperature_2m_max[k])}</div>`:'';
-    const body=it.length?it.map(x=>`<div class="wi k-${CK[catOf(x)]}${x.done?' done':''}">${x.t?`<b class="tm">${esc(x.t)}</b>`:''}${esc(x.text)}</div>`).join(''):'<div class="mt">일정 없음</div>';
+    const body=it.length?it.map(x=>`<div class="wi k-${CK[catOf(x)]}${dn(x)?' done':''}">${x.t?`<b class="tm">${esc(x.t)}</b>`:''}${esc(x.text)}</div>`).join(''):'<div class="mt">일정 없음</div>';
     return `<li class="wd${ds===T?' today':''}${dow===0?' sun':dow===6?' sat':''}"><div class="wdh"><b>${WD[dow]}${ds===T?' · 오늘':''}</b>${parse(ds).getUTCMonth()+1}/${parse(ds).getUTCDate()}${w}</div><div>${body}</div></li>`;
   }).join('');
 }
@@ -298,7 +327,7 @@ function calendar(){
   let h='';for(let i=0;i<first.getUTCDay();i++)h+='<div class="c out"></div>';
   for(let i=1;i<=n;i++){
     const ds=`${y}-${pad(m)}-${pad(i)}`,it=on(ds),dow=(first.getUTCDay()+i-1)%7;
-    const dots=it.slice(0,3).map(x=>`<i class="dot k-${CK[catOf(x)]}${x.done?' d':''}"></i>`).join('');
+    const dots=it.slice(0,3).map(x=>`<i class="dot k-${CK[catOf(x)]}${dn(x)?' d':''}"></i>`).join('');
     h+=`<button class="c${it.length?' has':''}${ds===T?' today':''}${ds===sel?' sel':''}${dow===0?' sun':dow===6?' sat':''}" data-d="${ds}" aria-label="${fmt(ds)} 일정 ${it.length}개"><span>${i}</span><span class="dots">${dots}</span></button>`;
   }
   $('cal').innerHTML=h;
