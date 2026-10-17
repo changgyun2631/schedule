@@ -118,6 +118,8 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
 .tabs{display:flex;gap:6px;margin:0 0 12px;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:4px}
 .tab{flex:1;border:0;background:transparent;border-radius:10px;min-height:42px;font-size:15px;font-weight:600;color:var(--mut)}
 .tab.on{background:var(--acc);color:#fff}
+.tab.q{flex:0 0 52px;font-size:17px}
+.qmsg{color:var(--mut);font-size:14px;margin:-4px 2px 12px}
 .tab i{font-style:normal;font-size:12px;opacity:.85;margin-left:4px}
 .add{display:flex;gap:8px;margin-bottom:12px}
 .add input{flex:1;min-width:0;font-size:16px;padding:10px 12px;border:1px solid var(--ln);border-radius:12px;background:var(--card)}
@@ -150,7 +152,7 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
 </section>
 
 <section id="app" hidden>
-  <nav class="tabs" role="tablist" aria-label="화면"><button class="tab on" id="tabS" role="tab">📅 일정</button><button class="tab" id="tabM" role="tab">📝 메모장<i id="mcnt"></i></button></nav>
+  <nav class="tabs" role="tablist" aria-label="화면"><button class="tab on" id="tabS" role="tab">📅 일정</button><button class="tab" id="tabM" role="tab">📝 메모장<i id="mcnt"></i></button><button class="tab q" id="tabQ" role="tab" aria-label="검색">🔍</button></nav>
   <div id="pushc" class="card push" hidden><span>🔔 이 기기에서 알림 받기 — 일정 30분 전·메모 시각에 알림이 와요</span><button id="pushb">켜기</button><button class="link" id="pushx">나중에</button></div>
   <div id="vSch">
   <div class="hero">
@@ -192,7 +194,15 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
     <div class="card"><h2>📝 메모</h2><ul id="ml2"></ul></div>
     <div class="card"><details><summary>📚 지난 기록 <span class="cnt" id="ml3n"></span></summary><ul id="ml3" style="margin-top:8px"></ul></details></div>
   </div>
-  <div class="hint">웹에서 추가·완료·내일로·메모 삭제가 돼요. 분류 바꾸기 등은 텔레그램에서. <span id="upd"></span></div>
+  <div id="vSearch" hidden>
+    <div class="mh"><h1>🔍 검색</h1><span class="sub" id="qcnt"></span></div>
+    <form class="add" id="qf"><input id="qin" type="search" placeholder="찾을 말 · 예: 미팅, 카드값, J사" autocomplete="off" enterkeyhint="search" aria-label="검색어"></form>
+    <div class="qmsg" id="qmsg"></div>
+    <div class="card" id="qc1" hidden><h2>📌 일정</h2><ul id="ql1"></ul></div>
+    <div class="card" id="qc2" hidden><h2>🔁 반복 일정</h2><ul id="ql2"></ul></div>
+    <div class="card" id="qc3" hidden><h2>📝 메모</h2><ul id="ql3"></ul></div>
+  </div>
+  <div class="hint">웹에서 추가·완료·내일로·삭제가 돼요. 분류 바꾸기 등은 텔레그램에서. <span id="upd"></span></div>
   <button class="link" id="forget" hidden>이 기기 기억 해제</button>
 </section>
 <div id="toast" role="status" hidden></div>
@@ -248,7 +258,9 @@ function row(x,opt={}){
   const live=!dn(x)&&!x.ev&&!x.memo;
   const done=live&&x.date<=addDays(T,1)?`<button class="dn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 완료">✔ 완료</button>`:'';   // 오늘·내일·밀린 일만(경기는 제외)
   const snz=live&&x.k==='o'&&x.date<=T?`<button class="sn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 내일로">⏭ 내일</button>`:'';   // 한 번짜리 오늘·밀린 일
-  const btn=done||snz?`<div class="btns">${done}${snz}</div>`:'';
+  const rec=x.k&&x.k!=='o';
+  const del=opt.del&&!x.ev?`<button class="rm" data-id="${x.id}"${rec?' data-rec="1"':''} aria-label="#${x.id} ${rec?'반복 일정 전체 ':''}삭제">🗑 ${rec?'반복 삭제':'삭제'}</button>`:'';
+  const btn=done||snz||del?`<div class="btns">${done}${snz}${del}</div>`:'';
   const tm=x.t?`<b class="tm">${esc(x.t)}</b> `:'';
   return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}${x.memo?' memo':''}"><span class="id">#${x.id}</span><div><div class="tx">${tm}${esc(x.text)}</div><div class="mt">${x.memo?'<span class="pill p-memo">📝 메모</span> ':''}${pill(catOf(x))}${meta?' '+esc(meta):''}</div></div>${btn}</li>`;
 }
@@ -296,7 +308,7 @@ document.addEventListener('click',e=>{
     if(a!=='done')return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
     const q=new URLSearchParams({title:`done ${id}`,body:'웹페이지에서 보낸 완료 요청입니다.'});
     window.open(`https://github.com/${REPO}/issues/new?${q}`,'_blank','noopener');return}
-  const k=a==='del'?'x|'+id:id+'|'+b.dataset.d,[doing,sent,cmd]=ACT[a];
+  const k=a==='del'?'x|'+id:id+'|'+b.dataset.d,[,sent,cmd]=ACT[a],doing=b.dataset.rec?'반복 일정 전체를 지워요':ACT[a][0];
   pend.set(k,Date.now());savePend();render();
   toast(`#${id} ${doing} <button class="undo" data-k="${k}">되돌리기</button>`);
   timers.set(k,setTimeout(async()=>{
@@ -349,6 +361,7 @@ function render(){
   calendar();
   memoView();
   pendAdds();
+  if(location.hash==='#search')searchView();
 }
 function mrow(x){
   const when=x.date?`${fmt(x.date)}${x.t?' · ⏰ '+x.t:''}`:'';
@@ -363,14 +376,43 @@ function memoView(){
   list2('ml1',up,'다가오는 메모가 없어요 · 예: 10/24 아빠생신 [09:00]');list2('ml2',no,'메모가 없어요 · 예: 우유 사기');list2('ml3',past,'지난 기록이 없어요');
   $('ml3n').textContent=past.length;
 }
-function view(){   // 주소 끝 #memo = 메모장 화면(휴대폰 뒤로가기로 일정으로 돌아온다)
-  const m=location.hash==='#memo';
-  $('vSch').hidden=m;$('vMemo').hidden=!m;$('tabS').classList.toggle('on',!m);$('tabM').classList.toggle('on',m);
-  $('tabS').setAttribute('aria-selected',String(!m));$('tabM').setAttribute('aria-selected',String(m));window.scrollTo(0,0);
+function view(){   // 주소 끝 #memo = 메모장, #search = 검색(휴대폰 뒤로가기로 일정으로 돌아온다)
+  const h=location.hash,m=h==='#memo',q=h==='#search';
+  $('vSch').hidden=m||q;$('vMemo').hidden=!m;$('vSearch').hidden=!q;
+  for(const [id,on] of [['tabS',!m&&!q],['tabM',m],['tabQ',q]]){$(id).classList.toggle('on',on);$(id).setAttribute('aria-selected',String(on))}
+  window.scrollTo(0,0);
+  if(q){searchView();setTimeout(()=>$('qin').focus(),50)}
 }
-$('tabS').onclick=()=>{if(location.hash==='#memo')history.back();else view()};
-$('tabM').onclick=()=>{if(location.hash!=='#memo')location.hash='memo'};
-addEventListener('hashchange',view);
+let pushed=false;
+function go(v){
+  const cur=location.hash.slice(1);if(cur===v)return;
+  if(!v){if(pushed)history.back();else{history.replaceState(null,'',location.pathname+location.search);view()}return}
+  if(!cur){pushed=true;location.hash=v}else{history.replaceState(null,'','#'+v);view()}
+}
+$('tabS').onclick=()=>go('');
+$('tabM').onclick=()=>go('memo');
+$('tabQ').onclick=()=>go('search');
+addEventListener('hashchange',()=>{if(!location.hash)pushed=false;view()});
+// 검색: 일정(한 번짜리)·반복 일정·메모에서 글자·카테고리로 찾는다. 결과에서 바로 완료·삭제
+const qn=s=>String(s).toLowerCase().replace(/\s+/g,'');
+function searchView(){
+  if(!data)return;
+  const q=qn($('qin').value),hit=(t,c)=>!!q&&(qn(t).includes(q)||qn(c)===q),seen=new Set(),once=[];
+  const xs=data.items.filter(x=>x.k==='o'&&!x.memo&&!gone(x.id)&&hit(x.text,catOf(x)))
+    .sort((a,b)=>(a.date<T)-(b.date<T)||(a.date<T?b.date.localeCompare(a.date):a.date.localeCompare(b.date)));   // 앞으로 할 것 먼저, 지난 건 최근 순
+  for(const x of xs)if(!seen.has(x.id)){seen.add(x.id);once.push(x)}
+  const rules=data.rules.filter(r=>!gone(r.id)&&hit(r.label,catOf(r)));
+  const memos=(data.memos||[]).filter(x=>!gone(x.id)&&hit(x.text,catOf(x)));
+  $('ql1').innerHTML=once.map(x=>row(x,{date:1,del:1})).join('');
+  $('ql2').innerHTML=rules.map(r=>`<li class="row"><span class="id">#${r.id}</span><div><div class="tx">${esc(r.label)}</div><div class="mt">${pill(catOf(r))}</div></div><div class="btns"><button class="rm" data-id="${r.id}" data-rec="1" aria-label="#${r.id} 반복 일정 전체 삭제">🗑 반복 삭제</button></div></li>`).join('');
+  $('ql3').innerHTML=memos.map(mrow).join('');
+  $('qc1').hidden=!once.length;$('qc2').hidden=!rules.length;$('qc3').hidden=!memos.length;
+  const n=once.length+rules.length+memos.length;
+  $('qcnt').textContent=q?`${n}개`:'';
+  $('qmsg').textContent=!q?'일정·반복 일정·메모에서 찾아요. 카테고리 이름(업무·미팅 등)으로도 돼요.':n?'':'맞는 게 없어요';
+}
+$('qin').oninput=searchView;
+$('qf').onsubmit=e=>{e.preventDefault();$('qin').blur()};
 // 앱 알림(웹 푸시): 알림을 허락하면 이 기기의 구독 정보를 봇에게 보낸다. 알림을 보내는 쪽은 내 PC의 봇이다.
 const pushOK='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
 const b64ud=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),c=>c.charCodeAt(0));
@@ -443,7 +485,7 @@ function calendar(){
   }
   $('cal').innerHTML=h;
   $('dayh').textContent=fmt(sel)+(sel===T?' · 오늘':'');
-  list($('dayl'),on(sel),'이 날은 비어 있어요');
+  list($('dayl'),on(sel),'이 날은 비어 있어요',{del:1});
 }
 $('cal').onclick=e=>{const b=e.target.closest('.c[data-d]');if(b){sel=b.dataset.d;calendar()}};
 $('prev').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m-2,1))).slice(0,7);calendar()};
