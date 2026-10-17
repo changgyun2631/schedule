@@ -6,6 +6,10 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="color-scheme" content="light dark">
 <title>일정관리</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1f4fb8">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
 :root{--bg:#f4f5f7;--card:#fff;--tx:#1b2030;--mut:#5f6678;--ln:#e2e5ec;--acc:#1f5fd6;--accbg:#e8f0fe;--red:#c62828;--redbg:#fdecec;--ev:#7b3fc4;--ok:#2e7d32;--shadow:0 1px 2px rgba(20,30,60,.06)}
 @media(prefers-color-scheme:dark){:root{--bg:#101319;--card:#1a1e27;--tx:#eceef4;--mut:#9aa2b5;--ln:#2b3140;--acc:#7fb0ff;--accbg:#1f2c47;--red:#ff8a8a;--redbg:#3a1f22;--ev:#c9a3ff;--ok:#7fd18b;--shadow:none}}
@@ -111,6 +115,25 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
 .wi.done{color:var(--mut);text-decoration:line-through}
 .wi .tm{margin-right:4px}
 .k-work.wi{border-left-color:var(--c-work)}.k-meet.wi{border-left-color:var(--c-meet)}.k-car.wi{border-left-color:var(--c-car)}.k-me.wi{border-left-color:var(--c-me)}.k-game.wi{border-left-color:var(--c-game)}
+.tabs{display:flex;gap:6px;margin:0 0 12px;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:4px}
+.tab{flex:1;border:0;background:transparent;border-radius:10px;min-height:42px;font-size:15px;font-weight:600;color:var(--mut)}
+.tab.on{background:var(--acc);color:#fff}
+.tab i{font-style:normal;font-size:12px;opacity:.85;margin-left:4px}
+.add{display:flex;gap:8px;margin-bottom:12px}
+.add input{flex:1;min-width:0;font-size:16px;padding:10px 12px;border:1px solid var(--ln);border-radius:12px;background:var(--card)}
+.add button{border:0;background:var(--acc);color:#fff;font-weight:600;border-radius:12px;padding:0 16px;min-height:44px}
+.add button:disabled{opacity:.6}
+.btns{display:flex;flex-direction:column;gap:6px}
+.sn,.rm{border:1px solid var(--ln);background:var(--card);font-weight:600;font-size:13px;border-radius:10px;min-height:36px;padding:0 10px;white-space:nowrap;color:var(--mut)}
+.rm{color:var(--red)}
+.push{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.push span{flex:1;min-width:12em}
+.push button{border:0;background:var(--acc);color:#fff;font-weight:600;border-radius:10px;min-height:40px;padding:0 14px}
+.push .link{background:none;color:var(--mut);padding:0 4px}
+.pending{font-size:14px;color:var(--mut);margin:-4px 0 12px}
+.pending div{padding:2px 0}
+.mh{display:flex;align-items:baseline;justify-content:space-between;margin:2px 2px 12px}
+.mh h1{font-size:20px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -127,6 +150,9 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
 </section>
 
 <section id="app" hidden>
+  <nav class="tabs" role="tablist" aria-label="화면"><button class="tab on" id="tabS" role="tab">📅 일정</button><button class="tab" id="tabM" role="tab">📝 메모장<i id="mcnt"></i></button></nav>
+  <div id="pushc" class="card push" hidden><span>🔔 이 기기에서 알림 받기 — 일정 30분 전·메모 시각에 알림이 와요</span><button id="pushb">켜기</button><button class="link" id="pushx">나중에</button></div>
+  <div id="vSch">
   <div class="hero">
     <div class="h-top"><h1 id="today"></h1><span class="greet" id="greet"></span></div>
     <div class="stats">
@@ -138,6 +164,8 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
     <div class="wxp" id="wxp" hidden></div>
   </div>
   <div id="stale" class="warn" hidden></div>
+  <form class="add" id="saddf"><input id="sadd" placeholder="일정 추가 · 예: 10/20 14:30 거래처 미팅 #업무" autocomplete="off" enterkeyhint="send" aria-label="일정 추가"><button>추가</button></form>
+  <div id="spend" class="pending" hidden></div>
   <div id="chips" class="chips" role="group" aria-label="카테고리"></div>
   <div id="od" class="card od" hidden><h2>⚠ 밀린 일 <span class="cnt" id="odn"></span></h2><ul id="odl"></ul></div>
   <div class="card"><h2>📌 오늘</h2><ul id="tl"></ul></div>
@@ -155,7 +183,16 @@ details summary{cursor:pointer;font-weight:600;padding:2px 0}
     <div class="day"><h3 id="dayh"></h3><ul id="dayl"></ul></div>
   </div>
   <div class="card"><details><summary>🔁 반복 일정 <span class="cnt" id="rn"></span></summary><ul id="rl" style="margin-top:8px"></ul></details></div>
-  <div class="hint">웹에서는 완료만 됩니다(GitHub 로그인 필요). 넣기·삭제는 텔레그램 봇에서 합니다. <span id="upd"></span></div>
+  </div>
+  <div id="vMemo" hidden>
+    <div class="mh"><h1>📝 메모장</h1><span class="sub" id="msub"></span></div>
+    <form class="add" id="maddf"><input id="madd" placeholder="메모 · 예: 우유 사기 · 10/24 아빠생신 [09:00]" autocomplete="off" enterkeyhint="send" aria-label="메모 추가"><button>추가</button></form>
+    <div id="mpend" class="pending" hidden></div>
+    <div class="card"><h2>⏰ 다가오는 메모</h2><ul id="ml1"></ul></div>
+    <div class="card"><h2>📝 메모</h2><ul id="ml2"></ul></div>
+    <div class="card"><details><summary>📚 지난 기록 <span class="cnt" id="ml3n"></span></summary><ul id="ml3" style="margin-top:8px"></ul></details></div>
+  </div>
+  <div class="hint">웹에서 추가·완료·내일로·메모 삭제가 돼요. 분류 바꾸기 등은 텔레그램에서. <span id="upd"></span></div>
   <button class="link" id="forget" hidden>이 기기 기억 해제</button>
 </section>
 <div id="toast" role="status" hidden></div>
@@ -199,7 +236,7 @@ async function decrypt(blob,k){
 function overdue(){
   const out=[],last={},wk=[0,6].includes(parse(T).getUTCDay());
   for(const x of data.items){
-    if(x.ev||x.memo||dn(x)||x.date>=T)continue;   // 경기·메모는 밀린 일이 아니다
+    if(x.ev||x.memo||dn(x)||gone(x.id)||x.date>=T)continue;   // 경기·메모는 밀린 일이 아니다
     if(x.k==='o'){out.push(x);continue}
     if(!last[x.id]||x.date>last[x.id].date)last[x.id]=x;     // 반복은 가장 최근 회차만
   }
@@ -208,7 +245,10 @@ function overdue(){
 }
 function row(x,opt={}){
   const meta=[opt.date?fmt(x.date):'',opt.ago?`${diff(T,x.date)}일 지남`:'',x.early?'마감이 주말이라 미리':'',x.k==='m'?'매달':x.k==='w'?'매주':''].filter(Boolean).join(' · ');
-  const btn=!dn(x)&&!x.ev&&!x.memo&&x.date<=addDays(T,1)?`<button class="dn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 완료">✔ 완료</button>`:'';   // 오늘·내일·밀린 일만(경기는 제외)
+  const live=!dn(x)&&!x.ev&&!x.memo;
+  const done=live&&x.date<=addDays(T,1)?`<button class="dn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 완료">✔ 완료</button>`:'';   // 오늘·내일·밀린 일만(경기는 제외)
+  const snz=live&&x.k==='o'&&x.date<=T?`<button class="sn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 내일로">⏭ 내일</button>`:'';   // 한 번짜리 오늘·밀린 일
+  const btn=done||snz?`<div class="btns">${done}${snz}</div>`:'';
   const tm=x.t?`<b class="tm">${esc(x.t)}</b> `:'';
   return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}${x.memo?' memo':''}"><span class="id">#${x.id}</span><div><div class="tx">${tm}${esc(x.text)}</div><div class="mt">${x.memo?'<span class="pill p-memo">📝 메모</span> ':''}${pill(catOf(x))}${meta?' '+esc(meta):''}</div></div>${btn}</li>`;
 }
@@ -227,38 +267,63 @@ const pend=new Map();   // 키 -> 누른 시각. 새 데이터에서 끝난 것�
 try{for(const [k,t] of Object.entries(JSON.parse(localStorage.getItem('schedule-pend')||'{}')))if(Date.now()-t<9e5)pend.set(k,t)}catch(_){}
 const savePend=()=>{try{localStorage.setItem('schedule-pend',JSON.stringify(Object.fromEntries(pend)))}catch(_){}};
 function dn(x){return !!x.done||pend.has(pk(x))}
-function prunePend(){   // 새 데이터에서 끝났거나 15분이 지난 것은 마스크를 푼다
-  const by=new Map(data.items.map(x=>[pk(x),x]));
-  for(const [k,t] of [...pend])if(!by.has(k)||by.get(k).done||Date.now()-t>9e5)pend.delete(k);
+const gone=id=>pend.has('x|'+id);   // 지운 것(반영될 때까지 숨김)
+function prunePend(){   // 새 데이터에서 끝났거나(지운 건 사라졌거나) 15분이 지난 것은 마스크를 푼다
+  const by=new Map(data.items.map(x=>[pk(x),x])),ids=new Set([...data.items,...(data.memos||[])].map(x=>String(x.id)));
+  for(const [k,t] of [...pend]){
+    const del=k.startsWith('x|');
+    if(Date.now()-t>9e5||(del?!ids.has(k.slice(2)):(!by.has(k)||by.get(k).done)))pend.delete(k);
+  }
   savePend();
 }
 let toastTimer;const timers=new Map();
 function toast(html,ms){const t=$('toast');t.hidden=false;t.innerHTML=html;clearTimeout(toastTimer);if(ms)toastTimer=setTimeout(()=>t.hidden=true,ms)}
 const hex=u=>[...new Uint8Array(u)].map(b=>b.toString(16).padStart(2,'0')).join('');
-async function sendDone(id){
+// 내 PC의 봇에게 보내는 요청: 서명 = HMAC(열쇠, 'a|id|text|ts'). a = done·snooze·del·add·sub
+async function sendAct(a,{id,text}={}){
   const ts=Math.floor(Date.now()/1000),k=await crypto.subtle.importKey('raw',new TextEncoder().encode(data.done.key),{name:'HMAC',hash:'SHA-256'},false,['sign']);
-  const sig=hex(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(`${id}.${ts}`)));
-  const r=await fetch('https://ntfy.sh/'+data.done.topic,{method:'POST',body:JSON.stringify({a:'done',id,ts,sig})});
+  const sig=hex(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(`${a}|${id??''}|${text??''}|${ts}`)));
+  const r=await fetch('https://ntfy.sh/'+data.done.topic,{method:'POST',body:JSON.stringify({a,id,text,ts,sig})});
   if(!r.ok)throw new Error(r.status);
 }
+const ACT={done:['완료 처리해요','완료를','완료'],snooze:['내일로 미뤄요','미루기를','미루기'],del:['지워요','삭제를','삭제']};
 document.addEventListener('click',e=>{
   const u=e.target.closest('.undo');
   if(u){const k=u.dataset.k;clearTimeout(timers.get(k));timers.delete(k);pend.delete(k);savePend();$('toast').hidden=true;render();return}
-  const b=e.target.closest('.dn');if(!b)return;
-  const id=+b.dataset.id,k=id+'|'+b.dataset.d;
-  if(!(data.done&&data.done.topic)){   // 열쇠가 없으면 예전 방식
+  const b=e.target.closest('.dn,.sn,.rm');if(!b)return;
+  const id=+b.dataset.id,a=b.classList.contains('dn')?'done':b.classList.contains('sn')?'snooze':'del';
+  if(!(data.done&&data.done.topic)){   // 열쇠가 없으면 완료만 예전 방식으로
+    if(a!=='done')return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
     const q=new URLSearchParams({title:`done ${id}`,body:'웹페이지에서 보낸 완료 요청입니다.'});
     window.open(`https://github.com/${REPO}/issues/new?${q}`,'_blank','noopener');return}
+  const k=a==='del'?'x|'+id:id+'|'+b.dataset.d,[doing,sent,cmd]=ACT[a];
   pend.set(k,Date.now());savePend();render();
-  toast(`#${id} 완료 처리해요 <button class="undo" data-k="${k}">되돌리기</button>`);
+  toast(`#${id} ${doing} <button class="undo" data-k="${k}">되돌리기</button>`);
   timers.set(k,setTimeout(async()=>{
     timers.delete(k);
-    try{await sendDone(id);toast(`#${id} 완료를 보냈어요 · 곧 반영돼요`,4000)}
-    catch(_){pend.delete(k);savePend();render();toast(`보내지 못했어요. 텔레그램에서 "완료 ${id}"로 해 주세요`,8000)}
+    try{await sendAct(a,{id});toast(`#${id} ${sent} 보냈어요 · 곧 반영돼요`,4000)}
+    catch(_){pend.delete(k);savePend();render();toast(`보내지 못했어요. 텔레그램에서 "${cmd} ${id}"로 해 주세요`,8000)}
   },5000));
 });
+// 추가 칸: 글을 그대로 봇에 보낸다(텔레그램에 보내는 것과 같은 형식). 반영될 때까지 '보냄'으로 보여 준다.
+const adds=[];
+const core=t=>t.replace(/#\S+/g,'').replace(/\[\d{1,2}:\d{2}\]/g,'').replace(/^\s*(?:(?:\d{4}\/)?\d{1,2}\/\d{1,2}|\+\d+|매달\s*\d+일?|매주\s*\S)\s+/,'').replace(/^\d{1,2}:\d{2}\s+/,'').trim();
+function pendAdds(){
+  const all=[...data.items,...(data.memos||[])].map(x=>x.text);
+  for(let i=adds.length-1;i>=0;i--)if(Date.now()-adds[i].ts>6e5||all.some(t=>t.includes(core(adds[i].text))))adds.splice(i,1);
+  for(const [id,memo] of [['spend',0],['mpend',1]]){const xs=adds.filter(x=>x.memo===memo);$(id).hidden=!xs.length;$(id).innerHTML=xs.map(x=>`<div>⏳ 보냄 · 곧 반영돼요: ${esc(x.text)}</div>`).join('')}
+}
+for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=async e=>{
+  e.preventDefault();let text=$(inp).value.trim();if(!text)return;
+  if(!(data.done&&data.done.topic))return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
+  if(memo&&!/#메모/.test(text))text='#메모 '+text;
+  const btn=$(f).querySelector('button');btn.disabled=true;
+  try{await sendAct('add',{text});$(inp).value='';adds.push({text,memo,ts:Date.now()});pendAdds();toast('보냈어요 · 1분쯤 뒤 반영돼요(결과는 텔레그램에도 와요)',5000);setTimeout(reload,7e4)}
+  catch(_){toast('보내지 못했어요. 텔레그램으로 보내 주세요',8000)}
+  finally{btn.disabled=false}
+};
 function list(el,items,emptyMsg,opt){el.innerHTML=items.length?items.map(x=>row(x,opt)).join(''):`<li class="empty">${emptyMsg}</li>`}
-const on=d=>data.items.filter(x=>x.date===d&&vis(x)).sort((a,b)=>(+dn(a))-(+dn(b))||(a.t||'99:99').localeCompare(b.t||'99:99')||a.id-b.id);   // 끝낸 건 아래, 시각 있는 것 먼저
+const on=d=>data.items.filter(x=>x.date===d&&vis(x)&&!gone(x.id)).sort((a,b)=>(+dn(a))-(+dn(b))||(a.t||'99:99').localeCompare(b.t||'99:99')||a.id-b.id);   // 끝낸 건 아래, 시각 있는 것 먼저
 
 function render(){
   prunePend();
@@ -282,7 +347,50 @@ function render(){
   $('rl').innerHTML=rules.map(r=>`<li class="row"><span class="id">#${r.id}</span><div><div class="tx">${esc(r.label)}</div><div class="mt">${pill(catOf(r))}</div></div></li>`).join('');
   weekly();
   calendar();
+  memoView();
+  pendAdds();
 }
+function mrow(x){
+  const when=x.date?`${fmt(x.date)}${x.t?' · ⏰ '+x.t:''}`:'';
+  return `<li class="row memo"><span class="id">#${x.id}</span><div><div class="tx">${esc(x.text)}</div><div class="mt">${when?esc(when)+' ':''}${pill(catOf(x))}</div></div><div class="btns"><button class="rm" data-id="${x.id}" aria-label="#${x.id} 삭제">🗑 삭제</button></div></li>`;
+}
+function list2(id,xs,empty){$(id).innerHTML=xs.length?xs.map(mrow).join(''):`<li class="empty">${empty}</li>`}
+function memoView(){
+  const ms=(data.memos||[]).filter(x=>!gone(x.id));
+  const up=ms.filter(x=>x.date&&x.date>=T).sort((a,b)=>a.date.localeCompare(b.date)||(a.t||'').localeCompare(b.t||''));
+  const no=ms.filter(x=>!x.date).sort((a,b)=>b.id-a.id),past=ms.filter(x=>x.date&&x.date<T).sort((a,b)=>b.date.localeCompare(a.date));
+  $('mcnt').textContent=ms.length?' '+ms.length:'';$('msub').textContent=`${ms.length}개`;
+  list2('ml1',up,'다가오는 메모가 없어요 · 예: 10/24 아빠생신 [09:00]');list2('ml2',no,'메모가 없어요 · 예: 우유 사기');list2('ml3',past,'지난 기록이 없어요');
+  $('ml3n').textContent=past.length;
+}
+function view(){   // 주소 끝 #memo = 메모장 화면(휴대폰 뒤로가기로 일정으로 돌아온다)
+  const m=location.hash==='#memo';
+  $('vSch').hidden=m;$('vMemo').hidden=!m;$('tabS').classList.toggle('on',!m);$('tabM').classList.toggle('on',m);
+  $('tabS').setAttribute('aria-selected',String(!m));$('tabM').setAttribute('aria-selected',String(m));window.scrollTo(0,0);
+}
+$('tabS').onclick=()=>{if(location.hash==='#memo')history.back();else view()};
+$('tabM').onclick=()=>{if(location.hash!=='#memo')location.hash='memo'};
+addEventListener('hashchange',view);
+// 앱 알림(웹 푸시): 알림을 허락하면 이 기기의 구독 정보를 봇에게 보낸다. 알림을 보내는 쪽은 내 PC의 봇이다.
+const pushOK='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+const b64ud=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),c=>c.charCodeAt(0));
+async function pushState(){
+  let hide=!pushOK||!data.push||!(data.done&&data.done.topic)||Notification.permission==='denied';
+  try{hide=hide||localStorage.getItem('schedule-push-later')==='1'}catch(_){}
+  if(!hide){const reg=await navigator.serviceWorker.getRegistration();hide=!!(reg&&await reg.pushManager.getSubscription())}
+  $('pushc').hidden=hide;
+}
+$('pushx').onclick=()=>{try{localStorage.setItem('schedule-push-later','1')}catch(_){}$('pushc').hidden=true};
+$('pushb').onclick=async()=>{
+  try{
+    const reg=await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;
+    if(await Notification.requestPermission()!=='granted')return toast('알림이 허용되지 않았어요. 설정에서 이 앱의 알림을 켜 주세요',8000);
+    const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ud(data.push.key)});
+    await sendAct('sub',{text:JSON.stringify(sub)});
+    $('pushc').hidden=true;toast('알림을 켰어요 · 1분 안에 시험 알림이 와요',6000);
+  }catch(e){toast('알림을 켜지 못했어요: '+esc(e.message||e),8000)}
+};
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});   // 앱 설치·알림용
 // ── 날씨(Open-Meteo, 무료·키 없음). 위치는 암호화된 데이터 안의 wx에서 온다 ──
 const WXI=[[0,'☀️','맑음'],[1,'🌤️','대체로 맑음'],[2,'⛅','구름 조금'],[3,'☁️','흐림'],[48,'🌫️','안개'],[57,'🌦️','이슬비'],[67,'🌧️','비'],[77,'❄️','눈'],[82,'🌦️','소나기'],[86,'🌨️','눈 소나기'],[99,'⛈️','뇌우']];
 const wxi=c=>WXI.find(w=>c<=w[0])||[0,'🌡️','—'];
@@ -341,7 +449,7 @@ $('cal').onclick=e=>{const b=e.target.closest('.c[data-d]');if(b){sel=b.dataset.
 $('prev').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m-2,1))).slice(0,7);calendar()};
 $('next').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m,1))).slice(0,7);calendar()};
 
-function showApp(remembered){$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;render();loadWeather()}
+function showApp(remembered){$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();loadWeather();pushState().catch(()=>{})}
 function showLock(msg){$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
 
 $('f').onsubmit=async e=>{
