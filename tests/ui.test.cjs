@@ -287,6 +287,26 @@ test('recurring and memo editors expose their real scheduling fields', async t =
   assert.equal(other.requests.some(r => r.url().includes('ntfy.sh')), false);
 });
 
+test('completion and editing for the same schedule cannot overlap', async t => {
+  const payload = structuredClone(fixture);
+  payload.items[0].k = 'w';
+  payload.items[0].edit = {...payload.items[0].edit, kind: 'weekly', wd: 6};
+  payload.rules.unshift({id: 1, label: '매주 일요일 업무 계획', text: payload.items[0].text, c: '업무', edit: payload.items[0].edit});
+  const {page} = await open(t, {}, {payload});
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.locator('.focus-aside details summary').click();
+  assert.equal(await page.locator('#rl .ed[data-id="1"]').count(), 0, 'a repeat rule cannot change while its completion is queued');
+  await page.locator('#actions .undo').click();
+  await page.locator('#rl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('수정 중인 반복 업무');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영'));
+  await page.locator('#editClose').click();
+  await page.locator('#tl .dn[data-id="1"]').click();
+  assert.equal(await page.locator('#actions .undo').count(), 0, 'completion waits until the date or repeat edit is confirmed');
+  assert.equal(await page.locator('#editor').isVisible(), true);
+});
+
 test('the edit sheet fits short phones, keeps focus inside and supports dark mode', async t => {
   const {page} = await open(t, {isMobile: true, hasTouch: true});
   await page.locator('#tl .ed[data-id="1"]').tap();

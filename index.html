@@ -403,7 +403,7 @@ function row(x,opt={}){
   return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}${x.memo?' memo':''}">${editContent(x,`${tm}${esc(x.text)}`,`${x.memo?'<span class="pill p-memo">메모</span> ':''}${pill(catOf(x))}${meta?`<span>${esc(meta)}</span>`:''}<span class="id">#${x.id}</span>`)}${btn}</li>`;
 }
 function editContent(x,text,meta=''){
-  const can=data.edit===1&&x.edit&&!dn(x)&&!gone(x.id);
+  const can=data.edit===1&&x.edit&&!dn(x)&&!changing(x.id);
   const content=`<span class="tx">${text}${can?'<svg class="icon edit-icon" aria-hidden="true"><use href="#i-edit"/></svg>':''}</span>${meta?`<span class="mt">${meta}</span>`:''}`;
   return can?`<button class="ed" data-id="${x.id}" aria-label="#${x.id} 수정" aria-haspopup="dialog">${content}</button>`:`<div>${content}</div>`;
 }
@@ -431,6 +431,7 @@ const saveQueued=()=>{try{sessionStorage.setItem('schedule-actions',JSON.stringi
 const savePend=()=>{try{localStorage.setItem('schedule-pend',JSON.stringify(Object.fromEntries([...pend].filter(([k])=>!queued.has(k)))))}catch(_){}};
 function dn(x){return !!x.done||pend.has(pk(x))}
 const gone=id=>pend.has('x|'+id);   // 지운 것(반영될 때까지 숨김)
+const changing=id=>[...pend.keys()].some(k=>k==='x|'+id||k.startsWith(id+'|'));
 function prunePend(){   // 새 데이터에서 끝났거나(지운 건 사라졌거나) 15분이 지난 것은 마스크를 푼다
   const by=new Map(data.items.map(x=>[pk(x),x])),ids=new Set([...data.items,...data.rules,...(data.memos||[])].map(x=>String(x.id)));
   for(const [k,t] of [...pend]){
@@ -475,6 +476,7 @@ document.addEventListener('click',e=>{
   if(u){const k=u.dataset.k;if(queued.get(k)?.state!=='queued')return;clearTimeout(timers.get(k));timers.delete(k);queued.delete(k);pend.delete(k);saveQueued();savePend();$('toast').hidden=true;render();return}
   const b=e.target.closest('.dn,.sn,.rm');if(!b)return;
   const id=+b.dataset.id,a=b.classList.contains('dn')?'done':b.classList.contains('sn')?'snooze':'del';
+  if(editing?.command&&editing.id===id){openEdit(id);return}
   if(!(data.done&&data.done.topic)){   // 열쇠가 없으면 완료만 예전 방식으로
     if(a!=='done')return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
     const q=new URLSearchParams({title:`done ${id}`,body:'웹페이지에서 보낸 완료 요청입니다.'});
@@ -511,9 +513,9 @@ function editMessage(message,error=false){$('editState').textContent=message;$('
 function editBusy(busy){editing.busy=busy;$('editFields').disabled=busy;$('editSave').disabled=busy;$('editSave').textContent=busy?'반영 확인 중':'저장';actionStatus()}
 function openEdit(id,fresh=false){
   if(!data)return;
-  if(editing?.busy){if(!$('editor').open)$('editor').showModal();return}
+  if(editing?.command&&(editing.busy||editing.id!==id)){if(!$('editor').open)$('editor').showModal();return}
   if(!editing||editing.id!==id||fresh){
-    const x=editFind(id);if(!x||dn(x)||gone(id))return toast('이 일정은 현재 수정할 수 없어요.',5000);
+    const x=editFind(id);if(!x||dn(x)||changing(id))return toast('이 일정은 현재 수정할 수 없어요.',5000);
     const spec=x.edit,repeat=['monthly','weekly'].includes(spec.kind);
     editing={id,rev:spec.rev,spec,busy:false,base:{text:x.text,date:spec.date||'',time:x.t||'',cat:catOf(x),day:spec.day,wd:spec.wd}};
     $('editTitle').textContent=`${repeat?'반복 일정':spec.memo?'메모':'일정'} 수정 · #${id}`;
