@@ -27,7 +27,7 @@
          return None
      sign = lambda s: hmac.new(key.encode(), s.encode(), hashlib.sha256).hexdigest()
      ok = hmac.compare_digest(sign(f'{a}|{i}|{text}|{ts}'), sig)
-@@ -576,6 +576,12 @@
+@@ -576,12 +576,18 @@
              if a == 'sub':
                  import alarm
                  say(chat, alarm.add_subscription(text))
@@ -40,3 +40,37 @@
              elif a == 'add':
                  if is_command(text):
                      raise ValueError('웹 추가 칸으로는 명령을 보낼 수 없음')
+                 say(chat, '🌐 웹에서 ' + handle(load(), text, today()))
+             else:
+-                say(chat, '🌐 웹에서 ' + handle(load(), f'{WEB_ACTS[a]} {i}', today()))
++                say(chat, '🌐 웹에서 ' + handle(load(), f'{WEB_ACTS[a]} {i}', today(), occurrence=(text or None) if a == 'done' else None))
+             n += 1
+         except Exception as ex:
+             log(f'웹 요청 {a} {i} 실패: {ex!r}')
+@@ -614,4 +620,4 @@
+-def handle(db, text, base):
++def handle(db, text, base, *, occurrence=None):
+     t = text.strip()
+     items = db['items']
+     if m := re.fullmatch(r'(?:목록|/list)(?:\s+(\S+))?', t):
+@@ -668,7 +674,19 @@
+         if m[1] == '삭제':
+             items.remove(it)
+         else:
+-            complete(it, base)
++            completeday = base
++            if occurrence is not None:
++                try:
++                    completeday = dt.date.fromisoformat(occurrence)
++                except (ValueError, TypeError):
++                    return '완료할 일정의 날짜가 올바르지 않아요. 새로고침 후 다시 확인해 주세요.'
++                if (completeday.isoformat() != occurrence or completeday > base + dt.timedelta(1)
++                        or completeday.isoformat() < (it.get('added') or '') or it.get('event')
++                        or not occurs(it, completeday)):
++                    return '선택한 날짜의 일정이 바뀌었어요. 새로고침 후 다시 확인해 주세요.'
++                if (it.get('done_until') or '') >= completeday.isoformat():
++                    return '이미 완료된 회차예요.'
++            complete(it, completeday)
+             log_ = db.setdefault('done_log', [])        # '@완료함'용 — 언제 끝냈는지(60일 보관)
+             log_.append({'id': it['id'], 'text': tlabel(it), 'at': dt.datetime.now().isoformat(timespec='minutes'), 'day': base.isoformat()})
+             db['done_log'] = [x for x in log_ if x['day'] >= (base - dt.timedelta(60)).isoformat()]

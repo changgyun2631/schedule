@@ -1246,6 +1246,48 @@ test('a failed newer refresh does not discard a valid response still on the way'
   assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 0, 'a valid response remains usable when a later request failed');
 });
 
+test('completion keeps the selected occurrence date across reload and supports legacy servers', async t => {
+  for(const supported of [true, false]) {
+    const payload = {...fixture, done_dates: supported ? 1 : undefined};
+    const {page, requests} = await open(t, {}, {payload});
+    await page.clock.install();
+    await page.locator('#nl .dn[data-id="4"]').click();
+    await page.reload();
+    await page.locator('#pw').fill('preview');
+    await page.locator('#go').click();
+    await page.locator('#app').waitFor({state: 'visible'});
+    await page.clock.runFor(5500);
+    await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'));
+    const action = requests.find(r => r.url().includes('ntfy.sh')).postDataJSON();
+    assert.equal(action.a, 'done');
+    assert.equal(action.id, 4);
+    assert.equal(action.text || '', supported ? day(1) : '', 'the signed request keeps the date selected before reopening');
+  }
+});
+
+test('browser completion saves the selected recurring occurrence even with older unfinished work', {skip: !process.env.SCHEDULE_BOT_DIR}, async t => {
+  const {execFileSync} = require('node:child_process');
+  const bridge = input => JSON.parse(execFileSync('python', [join(__dirname, 'edit_bridge.py')], {input: JSON.stringify({...input, today}), encoding: 'utf8', env: {...process.env, PYTHONIOENCODING: 'utf-8'}}));
+  const wd = (new Date(day(1) + 'T00:00:00Z').getUTCDay() + 6) % 7;
+  const db = {next_id: 2, items: [{id: 1, kind: 'weekly', wd, text: '회차별 반복 업무', cat: '업무', added: day(-21)}]};
+  const initial = bridge({db});
+  const payload = {...initial.payload, wx: fixture.wx, done: fixture.done, updated: fixture.updated};
+  const {page, requests} = await open(t, {}, {payload});
+  assert.equal(await page.locator('#odl .dn[data-id="1"]').count(), 1, 'an older unfinished occurrence exists');
+  await page.clock.install();
+  await page.locator('#nl .dn[data-id="1"]').click();
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'));
+  const body = requests.find(r => r.url().includes('ntfy.sh')).postDataJSON();
+  const saved = bridge({db: initial.db, body});
+  assert.equal(saved.db.items[0].done_until, day(1), 'the real bot completes the selected tomorrow occurrence');
+  assert.equal(saved.db.done_log[0].day, today);
+  const blob = await encryptFixture({...payload, ...saved.payload});
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.evaluate(() => reload());
+  assert.equal(await page.locator('#nl .dn[data-id="1"]').count(), 0, 'the saved result agrees with the optimistic completion');
+});
+
 test('completion can be undone and adding keeps the signed request flow', async t => {
   const {page, requests} = await open(t);
   await page.locator('#tl .dn[data-id="1"]').click();

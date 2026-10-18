@@ -19,6 +19,7 @@ with tempfile.TemporaryDirectory() as temp:
     with (patch.multiple(bot, SELFTEST=True, DATA=str(path), PAGE=str(Path(temp) / 'fake-page.html'),
                         NTFY_STATE=str(Path(temp) / 'fake-ntfy.json')),
           patch.object(bot, 'ntfy_conf', return_value={'key': 'test-only-key', 'topic': 'schedule-ui-test'}),
+          patch.object(bot, 'today', return_value=dt.date.fromisoformat(request['today'])),
           patch.object(bot, 'say'), patch.object(bot, 'log'),
           patch.object(publish, 'names', return_value={'테스트상사': 'T사'})):
         if request.get('body'):

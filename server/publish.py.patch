@@ -29,7 +29,7 @@
 +              'k': i['kind'][0], 'added': i.get('added') or '', 'edit': web_edit.edit_spec(i, table)}
               for i in db['items'] if bot.is_memo(i)]                  # 메모장 탭: 날짜 범위와 상관없이 전부
 -    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos}
-+    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos, 'edit': 1, 'edit_results': db.get('web_edits', [])}
++    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos, 'edit': 1, 'done_dates': 1, 'edit_results': db.get('web_edits', [])}
  
  
  def derive(pw, salt):

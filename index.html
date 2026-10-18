@@ -499,7 +499,7 @@ function scheduleAction(k){
     timers.delete(k);if(!key||queued.get(k)!==p)return;
     const [,sent,cmd]=ACT[p.a];
     p.state='sending';saveQueued();actionStatus();
-    try{await sendAct(p.a,{id:p.id});if(queued.get(k)!==p)return;queued.delete(k);saveQueued();savePend();render();toast(`#${p.id} ${sent} 보냈어요 · 곧 반영돼요`,4000)}
+    try{await sendAct(p.a,{id:p.id,...(p.a==='done'&&data.done_dates===1?{text:p.date}:{})});if(queued.get(k)!==p)return;queued.delete(k);saveQueued();savePend();render();toast(`#${p.id} ${sent} 보냈어요 · 곧 반영돼요`,4000)}
     catch(_){if(leaving||queued.get(k)!==p)return;queued.delete(k);pend.delete(k);saveQueued();savePend();render();toast(`보내지 못했어요. 텔레그램에서 "${cmd} ${p.id}"로 해 주세요`,8000)}
   },Math.max(0,p.ts+5000-Date.now())));
 }
