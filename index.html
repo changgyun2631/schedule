@@ -51,9 +51,11 @@ ul{list-style:none;margin:0;padding:0}
 .editor{width:480px;max-width:calc(100% - 32px);padding:0;border:1px solid var(--ln);border-radius:24px;color:var(--tx);background:var(--card);box-shadow:var(--nav-shadow)}
 .editor::backdrop{background:#071f2bcc}
 .edit-form{display:flex;flex-direction:column;max-height:calc(100dvh - 48px)}
+.edit-head,.edit-foot{flex-shrink:0;background:var(--card)}
 .edit-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 24px;border-bottom:1px solid var(--ln)}
 .edit-head h2{margin:0}.edit-close,.edit-clear{flex:none;min-width:44px;min-height:44px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);font-size:20px}
-.edit-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;border:0;margin:0;padding:20px 24px;overflow:auto;min-height:0}
+.edit-body{min-height:0;overflow:auto}
+.edit-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;border:0;margin:0;padding:20px 24px;min-width:0}
 .edit-fields label{display:flex;flex-direction:column;gap:8px;min-width:0;font-size:14px;font-weight:600}
 .edit-wide{grid-column:1/-1}
 .edit-fields input,.edit-fields select,.edit-fields textarea{width:100%;min-width:0;min-height:48px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);padding:10px 12px;font:16px/1.5 var(--font-body);color:var(--tx)}
@@ -274,6 +276,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
       <button class="tab" id="tabQ" role="tab" aria-controls="vSearch" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span>검색</span></button>
     </nav>
   </header>
+  <div id="draftWarning" class="warn" role="status" hidden></div>
   <div id="pushc" class="card push" hidden><span>일정 30분 전과 메모 시각에 알림을 받아 보세요.</span><button id="pushb">알림 켜기</button><button class="link" id="pushx">나중에</button></div>
   <div id="actions" class="action-status" aria-label="처리 중인 변경" aria-live="polite" hidden></div>
   <div id="vSch" role="tabpanel" aria-labelledby="tabS">
@@ -353,7 +356,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
 <dialog id="editor" class="editor" aria-labelledby="editTitle">
   <form id="editForm" class="edit-form">
     <header class="edit-head"><h2 id="editTitle">일정 수정</h2><button class="edit-close" id="editClose" type="button" aria-label="수정 창 닫기">×</button></header>
-    <fieldset id="editFields" class="edit-fields">
+    <div class="edit-body"><fieldset id="editFields" class="edit-fields">
       <label class="edit-wide">내용<textarea id="editText" rows="2" maxlength="2000" required autofocus></textarea></label>
       <label class="edit-wide" id="editDateWrap">날짜<span class="edit-control"><input id="editDate" type="date" min="2000-01-01" max="2100-12-31"><button id="editClearDate" class="edit-clear" type="button" aria-label="메모 날짜 지우기" hidden>×</button></span></label>
       <label class="edit-wide" id="editDayWrap" hidden>매달 날짜<input id="editDay" type="number" min="1" max="31" inputmode="numeric"></label>
@@ -361,8 +364,8 @@ body:has(#actions:not([hidden])) #toast{display:none}
       <label>시간<span class="edit-control"><input id="editTime" type="time"><button id="editClearTime" class="edit-clear" type="button" aria-label="시간 지우기">×</button></span></label>
       <label>분류<select id="editCat"></select></label>
       <p class="edit-note edit-wide" id="editHint" hidden></p>
-    </fieldset>
-    <footer class="edit-foot"><p id="editState" class="edit-state" role="status"></p><button id="editLatest" class="edit-latest" type="button" hidden>최신 내용 불러오기</button><button id="editSave" class="go" type="submit">저장</button></footer>
+    </fieldset></div>
+    <footer class="edit-foot"><p id="editDraftWarning" class="edit-state error" role="status" hidden></p><p id="editState" class="edit-state" role="status"></p><button id="editLatest" class="edit-latest" type="button" hidden>최신 내용 불러오기</button><button id="editDiscard" class="edit-latest" type="button" hidden>초안 버리기</button><button id="editSave" class="go" type="submit">저장</button></footer>
   </form>
 </dialog>
 <div id="toast" role="status" hidden></div>
@@ -380,10 +383,12 @@ const fmt=s=>{const d=parse(s);return `${d.getUTCMonth()+1}/${d.getUTCDate()}(${
 const diff=(a,b)=>Math.round((parse(a)-parse(b))/864e5);
 const kstToday=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
 const b64d=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
-const b64e=u=>btoa(String.fromCharCode(...u));
+const b64e=u=>btoa(Array.from(u,c=>String.fromCharCode(c)).join(''));
 const KEY='schedule-key-v1';
+const DRAFTS='schedule-drafts-v1',DRAFT_AAD=new TextEncoder().encode(DRAFTS);
 
-let data=null,key=null,T=kstToday(),viewYM=T.slice(0,7),sel=T;
+let data=null,key=null,keySalt='',T=kstToday(),viewYM=T.slice(0,7),sel=T;
+let draftVersion=0,draftWrite=Promise.resolve(),draftRaw=null,draftBlocked=false;
 const mondayOf=s=>addDays(s,-((parse(s).getUTCDay()+6)%7));
 let weekStart=mondayOf(T),wxData=null,wxName='';
 // 카테고리: 맨 위 버튼으로 고른다(이 기기에 기억). 데이터의 c가 없으면 기타.
@@ -401,7 +406,7 @@ async function fetchBlob(){
 }
 async function deriveKey(pw,blob){
   const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
-  return crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt:b64d(blob.salt),iterations:blob.iter},base,{name:'AES-GCM',length:256},true,['decrypt']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt:b64d(blob.salt),iterations:blob.iter},base,{name:'AES-GCM',length:256},true,['encrypt','decrypt']);
 }
 async function decrypt(blob,k){
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(blob.iv)},k,b64d(blob.ct));
@@ -484,7 +489,7 @@ async function sendAct(a,{id,text}={}){
 }
 const ACT={done:['완료 처리해요','완료를','완료'],snooze:['내일로 미뤄요','미루기를','미루기'],del:['지워요','삭제를','삭제']};
 function actionStatus(){
-  const edit=[...edits.values()].filter(x=>x.requestAt&&(x.busy||x.command||x.error)).map(x=>`<div><span>#${x.id} 수정 ${x.busy?'반영 확인 중':'확인 필요'}</span><button class="edit-resume" data-id="${x.id}" aria-label="#${x.id} 수정 상태 열기">확인</button></div>`).join('');
+  const edit=[...edits.values()].filter(x=>editDirty(x)||(x.requestAt&&(x.busy||x.command||x.error))).map(x=>`<div><span>#${x.id} 수정 ${x.busy?'반영 확인 중':x.requestAt?'확인 필요':'작성 중'}</span><button class="edit-resume" data-id="${x.id}" aria-label="#${x.id} 수정 상태 열기">확인</button></div>`).join('');
   $('actions').hidden=!queued.size&&!edit;
   $('actions').innerHTML=[...queued].map(([k,p])=>`<div><span>#${p.id} ${ACT[p.a][2]} ${p.state==='queued'?'대기 중':'보내는 중'}</span>${p.state==='queued'?`<button class="undo" data-k="${esc(k)}" aria-label="#${p.id} ${ACT[p.a][2]} 되돌리기">되돌리기</button>`:''}</div>`).join('')+edit;
 }
@@ -558,9 +563,11 @@ function deleteTarget(text){
 const adds=[];
 const core=t=>t.replace(/#\S+/g,'').replace(/\[\d{1,2}:\d{2}\]/g,'').replace(/^\s*(?:(?:\d{4}\/)?\d{1,2}\/\d{1,2}|\+\d+|매달\s*\d+일?|매주\s*\S)\s+/,'').replace(/^\d{1,2}:\d{2}\s+/,'').trim();
 function pendAdds(){
+  const count=adds.length;
   const all=[...data.items,...(data.memos||[])].map(x=>x.text);
   for(let i=adds.length-1;i>=0;i--)if(Date.now()-adds[i].ts>6e5||all.some(t=>t.includes(core(adds[i].text))))adds.splice(i,1);
   for(const [id,memo] of [['spend',0],['mpend',1]]){const xs=adds.filter(x=>x.memo===memo);$(id).hidden=!xs.length;$(id).innerHTML=xs.map(x=>`<div>⏳ 보냄 · 곧 반영돼요: ${esc(x.text)}</div>`).join('')}
+  if(adds.length!==count)saveDrafts();
 }
 let voice=null;
 function entryMessage(form,message='',error=false){const state=form.querySelector('.entry-state');state.textContent=message;state.hidden=!message;state.classList.toggle('error',error)}
@@ -602,6 +609,7 @@ $('svoice').onclick=()=>{
       const text=Array.from(e.results,result=>result[0].transcript).join(' ').trim();session.heard=!!text;
       $('sadd').value=[session.prefix,text].filter(Boolean).join(' ');
       entryControls($('saddf'));
+      saveDrafts();
     };
     rec.onend=()=>finishVoice(session,session.heard?'':'음성이 들리지 않았어요. 마이크를 눌러 다시 말해 주세요.');
     rec.onerror=e=>{
@@ -614,8 +622,8 @@ $('svoice').onclick=()=>{
   }catch(_){if(session){finishVoice(session,'마이크를 시작하지 못했어요. 권한을 확인한 뒤 다시 눌러 주세요.',true);try{session.rec.abort()}catch(_){}}else voiceMessage('이 브라우저에서 마이크를 시작할 수 없어요.',true)}
 };
 $('sadd').addEventListener('input',cancelVoice);
-for(const id of ['saddf','maddf'])$(id).addEventListener('input',()=>{if(!voice)entryMessage($(id));entryControls($(id))});
-addEventListener('pagehide',cancelVoice);
+for(const id of ['saddf','maddf'])$(id).addEventListener('input',()=>{const form=$(id);if(form.dataset.sending!=='true'&&form.entryRequest?.uncertain)delete form.entryRequest;if(!voice)entryMessage(form);entryControls(form);saveDrafts()});
+addEventListener('pagehide',()=>{cancelVoice();saveDrafts()});
 for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=async e=>{
   const form=$(f),btn=form.querySelector('button[type=submit]');
   if(btn.disabled||!key||!data){e.preventDefault();return}
@@ -625,26 +633,78 @@ for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=
     const x=[...data.items,...data.rules,...(data.memos||[])].find(x=>x.id===target.id);
     if(x?.ev)return entryMessage(form,'자동 경기 일정은 이 입력으로 삭제할 수 없어요.',true);
     if(changing(target.id))return entryMessage(form,'이 일정은 다른 변경을 처리 중이에요. 반영 후 다시 시도해 주세요.',true);
-    if(queueAction('del',target.id,x?.date,data.rules.some(r=>r.id===target.id)||(!!x?.k&&x.k!=='o'))){$(inp).value='';entryMessage(form);entryControls(form)}
+    if(queueAction('del',target.id,x?.date,data.rules.some(r=>r.id===target.id)||(!!x?.k&&x.k!=='o'))){$(inp).value='';entryMessage(form);entryControls(form);saveDrafts()}
     return;
   }
   if(!(data.done&&data.done.topic))return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
   if(memo&&!/#메모/.test(text))text='#메모 '+text;
   const sessionKey=key;form.dataset.sending='true';entryControls(form);
-  try{await sendAct('add',{text});if(key!==sessionKey)return;if($(inp).value===input)$(inp).value='';adds.push({text,memo,ts:Date.now()});pendAdds();toast('보냈어요 · 1분쯤 뒤 반영돼요(결과는 텔레그램에도 와요)',5000);setTimeout(reload,7e4)}
-  catch(_){if(key===sessionKey)toast('보내지 못했어요. 입력한 내용은 남겨 두었어요',8000)}
-  finally{form.dataset.sending='false';entryControls(form)}
+  const request={uncertain:false};form.entryRequest=request;
+  try{await saveDrafts();if(key!==sessionKey||form.entryRequest!==request)return;await sendAct('add',{text});if(key!==sessionKey)return;if($(inp).value===input)$(inp).value='';adds.push({text,memo,ts:Date.now()});pendAdds();toast('보냈어요 · 1분쯤 뒤 반영돼요(결과는 텔레그램에도 와요)',5000);setTimeout(reload,7e4)}
+  catch(_){request.uncertain=true;if(key===sessionKey)entryMessage(form,'전송 결과를 확인하지 못했어요. 이미 등록됐는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true)}
+  finally{if(form.entryRequest===request){if(!request.uncertain)delete form.entryRequest;form.dataset.sending='false';entryControls(form);saveDrafts()}}
 };
 const edits=new Map(),EDIT_FIELDS=[['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd']];
 let editing=null,editTimer;
 const editFind=id=>[...data.items,...(data.memos||[]),...data.rules].find(x=>x.id===id&&x.edit);
 const editBase=x=>({text:x.text,date:x.edit.date||'',time:x.t||'',cat:catOf(x),day:x.edit.day,wd:x.edit.wd});
+const editDirty=x=>EDIT_FIELDS.some(([,field])=>String(x.draft[field]??'')!==String(x.base[field]??''));
+function draftWarning(message=''){for(const id of ['draftWarning','editDraftWarning']){$(id).textContent=message;$(id).hidden=!message}}
+function saveDrafts(){
+  stashEdit();
+  if(editing)$('editDiscard').hidden=!editDirty(editing)||!!editing.command;
+  if(!key||draftBlocked)return Promise.resolve();
+  const sessionKey=key,version=++draftVersion;
+  const snapshot={sadd:$('sadd').value,madd:$('madd').value,edits:[...edits.values()].filter(x=>x.command||editDirty(x)),adds,
+    submitting:Object.fromEntries(['saddf','maddf'].map(id=>[id,!!$(id).entryRequest]))};
+  const plain=JSON.stringify(snapshot),hasWork=snapshot.sadd||snapshot.madd||snapshot.edits.length||adds.length||Object.values(snapshot.submitting).some(Boolean);
+  draftWrite=(async()=>{
+    try{
+      const iv=crypto.getRandomValues(new Uint8Array(12));
+      const ct=hasWork?await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:DRAFT_AAD},sessionKey,new TextEncoder().encode(plain)):null;
+      if(key!==sessionKey)return;
+      if(version!==draftVersion)return draftWrite;
+      if(localStorage.getItem(DRAFTS)!==draftRaw){draftBlocked=true;return draftWarning('다른 창에서 초안이 변경되어 이 창의 자동 보관을 멈췄어요. 현재 입력을 복사한 뒤 새로고침해 주세요.')}
+      const raw=ct?JSON.stringify({salt:keySalt,iv:b64e(iv),ct:b64e(new Uint8Array(ct))}):null;
+      if(raw)localStorage.setItem(DRAFTS,raw);else localStorage.removeItem(DRAFTS);
+      draftRaw=raw;draftWarning();
+    }catch(_){if(key===sessionKey&&version===draftVersion)draftWarning('이 기기에 초안을 보관하지 못했어요. 앱을 닫기 전에 입력한 내용을 따로 복사해 주세요.')}
+  })();
+  return draftWrite;
+}
+function validDraftFields(value){return value&&typeof value==='object'&&!Array.isArray(value)&&['text','date','time','cat'].every(k=>typeof value[k]==='string')&&Object.values(value).every(v=>v===null||['string','number'].includes(typeof v))}
+async function restoreDrafts(){
+  const sessionKey=key;draftBlocked=false;
+  try{
+    const raw=localStorage.getItem(DRAFTS);draftRaw=raw;
+    if(!raw)return;
+    const sealed=JSON.parse(raw);
+    if(sealed.salt!==keySalt||typeof sealed.ct!=='string'||sealed.ct.length>2e6)throw new Error('Invalid draft envelope');
+    const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(sealed.iv),additionalData:DRAFT_AAD},sessionKey,b64d(sealed.ct));
+    if(key!==sessionKey)return;
+    if(localStorage.getItem(DRAFTS)!==raw)throw new Error('Draft changed while unlocking');
+    const saved=JSON.parse(new TextDecoder().decode(plain));
+    if(typeof saved.sadd!=='string'||typeof saved.madd!=='string'||!Array.isArray(saved.edits)||!Array.isArray(saved.adds))throw new Error('Invalid draft data');
+    const restored=[];
+    for(const x of saved.edits){
+      if(!Number.isSafeInteger(x.id)||x.id<1||!validDraftFields(x.base)||!validDraftFields(x.draft)||!['once','note','weekly','monthly'].includes(x.spec?.kind)||typeof x.rev!=='string'||!/^[a-f0-9]{64}$/.test(x.rev))throw new Error('Invalid edit draft');
+      if(x.command&&(typeof x.command.rid!=='string'||!/^[A-Za-z0-9_-]{10,64}$/.test(x.command.rid)||x.command.rev!==x.rev||!Number.isFinite(x.requestAt)||!x.command.changes||!Object.keys(x.command.changes).length||Object.keys(x.command.changes).some(k=>!EDIT_FIELDS.some(([,field])=>field===k))))throw new Error('Invalid pending edit');
+      const waiting=!!(x.command&&x.busy&&x.sent&&Date.now()-x.requestAt>=0&&Date.now()-x.requestAt<120000);
+      restored.push({...x,busy:waiting,...(x.command&&!waiting?{error:true,message:'화면이 닫히기 전 수정의 반영을 아직 확인하지 못했어요. 내용을 확인한 뒤 다시 시도해 주세요.'}:{})});
+    }
+    if(saved.adds.some(x=>typeof x.text!=='string'||![0,1].includes(x.memo)||!Number.isFinite(x.ts)))throw new Error('Invalid pending additions');
+    $('sadd').value=saved.sadd;$('madd').value=saved.madd;
+    for(const x of restored)edits.set(x.id,x);
+    adds.push(...saved.adds);
+    for(const id of ['saddf','maddf']){if(saved.submitting?.[id]){$(id).entryRequest={uncertain:true};entryMessage($(id),'추가 요청 전송 중 화면이 닫혔어요. 이미 등록됐는지 확인한 뒤 다시 시도해 주세요.',true)}entryControls($(id))}
+  }catch(_){if(key===sessionKey){draftBlocked=true;draftWarning('보관한 초안을 열지 못했어요. 현재 입력은 앱을 닫기 전에 따로 복사해 주세요.')}}
+}
 $('editCat').innerHTML=CATS.map(c=>`<option>${c}</option>`).join('');
 $('editWeek').innerHTML=[...'월화수목금토일'].map((d,i)=>`<option value="${i}">${d}요일</option>`).join('');
 function stashEdit(){if(editing)editing.draft=Object.fromEntries(EDIT_FIELDS.map(([field,name])=>[name,$(field).value]))}
 function editMessage(message,error=false,current=editing){
   current.message=message;current.error=error;
-  if(editing===current){$('editState').textContent=message;$('editState').classList.toggle('error',error);$('editLatest').hidden=!current.conflict}
+  if(editing===current){$('editState').textContent=message;$('editState').classList.toggle('error',error);$('editLatest').hidden=!current.conflict;$('editDiscard').hidden=!editDirty(current)||!!current.command}
 }
 function editBusy(busy,current=editing){
   current.busy=busy;
@@ -674,6 +734,7 @@ function openEdit(id,fresh=false){
 }
 document.addEventListener('click',e=>{const b=e.target.closest('.ed,.edit-resume');if(b)openEdit(+b.dataset.id)});
 $('editClose').onclick=()=>$('editor').close();
+$('editDiscard').onclick=()=>{if(!editing||editing.command)return;edits.delete(editing.id);editing=null;$('editor').close();actionStatus();saveDrafts()};
 $('editor').addEventListener('keydown',e=>{
   if(e.key!=='Tab')return;
   const stops=[...$('editor').querySelectorAll('button,input,textarea,select')].filter(el=>!el.matches(':disabled')&&el.tabIndex>=0&&el.getClientRects().length);
@@ -681,14 +742,16 @@ $('editor').addEventListener('keydown',e=>{
   if(target){e.preventDefault();target.focus()}
 });
 $('editor').addEventListener('close',()=>{
-  if(!key)return;
+  if(!key||$('editor').open)return;
+  saveDrafts();actionStatus();
   const target=[...document.querySelectorAll(`.ed[data-id="${editing?.id}"]`)].find(el=>el.getClientRects().length)||document.querySelector('.tab.on');
   target?.focus({preventScroll:true});
 });
 $('editTime').oninput=()=>{$('editClearTime').disabled=!$('editTime').value;if(editing?.spec.memo)$('editDate').required=!!$('editTime').value};
-$('editClearTime').onclick=()=>{$('editTime').value='';$('editTime').oninput()};
-$('editClearDate').onclick=()=>{$('editDate').value='';$('editTime').value='';$('editTime').oninput()};
-$('editLatest').onclick=async()=>{const current=editing;await reload();if(editing===current)openEdit(current.id,true)};
+$('editClearTime').onclick=()=>{$('editTime').value='';$('editTime').oninput();saveDrafts()};
+$('editClearDate').onclick=()=>{$('editDate').value='';$('editTime').value='';$('editTime').oninput();saveDrafts()};
+for(const event of ['input','change'])$('editForm').addEventListener(event,saveDrafts);
+$('editLatest').onclick=async()=>{const current=editing;await reload();if(editing===current){openEdit(current.id,true);saveDrafts()}};
 $('editForm').onsubmit=async e=>{
   e.preventDefault();if(!editing||editing.busy||!key)return;
   stashEdit();
@@ -700,16 +763,18 @@ $('editForm').onsubmit=async e=>{
   for(const [field,value] of Object.entries(values))if(value!==current.base[field])changes[field]=value;
   if(!Object.keys(changes).length){
     if(current.command)return editMessage('이전 수정의 반영을 아직 확인하지 못했어요. 내용을 확인하거나 같은 수정으로 다시 시도해 주세요.',true);
-    edits.delete(current.id);editing=null;$('editor').close();actionStatus();return;
+    edits.delete(current.id);editing=null;$('editor').close();actionStatus();saveDrafts();return;
   }
   if(!current.command||JSON.stringify(current.command.changes)!==JSON.stringify(changes))current.command={rid:crypto.randomUUID(),rev:current.rev,changes};
   current.requestAt=Date.now();current.submitted={...current.draft};current.sent=false;current.conflict=false;editBusy(true);editMessage('수정 요청을 보내고 있어요.');
   try{
+    await saveDrafts();if(key!==sessionKey||edits.get(current.id)!==current)return;
     await sendAct('edit',{id:current.id,text:JSON.stringify(current.command)});
     if(key!==sessionKey||edits.get(current.id)!==current)return;
     current.sent=true;editMessage('수정 요청을 보냈어요. 반영 결과를 확인하고 있어요.',false,current);
     scheduleEditCheck(3000);
-  }catch(_){if(key===sessionKey&&edits.get(current.id)===current){editBusy(false,current);editMessage('전송을 확인하지 못했어요. 입력은 남아 있으니 다시 시도해 주세요.',true,current)}}
+    saveDrafts();
+  }catch(_){if(key===sessionKey&&edits.get(current.id)===current){editBusy(false,current);editMessage('전송을 확인하지 못했어요. 입력은 남아 있으니 다시 시도해 주세요.',true,current);saveDrafts()}}
 };
 function scheduleEditCheck(delay=5000){
   clearTimeout(editTimer);
@@ -722,12 +787,15 @@ async function checkEdit(){
     editBusy(false,current);editMessage('아직 반영을 확인하지 못했어요. PC 봇이 켜져 있는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true,current);
   }
   scheduleEditCheck();
+  saveDrafts();
 }
 function editResult(){
   stashEdit();
+  let changed=false;
   for(const current of edits.values()){
     if(!current.command)continue;
     const result=(data.edit_results||[]).find(r=>r.rid===current.command.rid&&r.id===current.id);if(!result)continue;
+    changed=true;
     const newer=current.submitted&&Object.keys(current.submitted).some(field=>current.draft[field]!==current.submitted[field]),savedBase={...current.base,...current.command.changes};
     current.command=null;editBusy(false,current);
     if(result.ok&&newer){
@@ -742,6 +810,7 @@ function editResult(){
   }
   if(![...edits.values()].some(x=>x.busy&&x.sent))clearTimeout(editTimer);
   actionStatus();
+  if(changed)saveDrafts();
 }
 function resetEditor(){clearTimeout(editTimer);edits.clear();editing=null;$('editForm').reset();$('editor').close();actionStatus()}
 function list(el,items,emptyMsg,opt){el.innerHTML=items.length?items.map(x=>row(x,opt)).join(''):`<li class="empty">${emptyMsg}</li>`}
@@ -925,7 +994,7 @@ $('cal').onclick=e=>{const b=e.target.closest('.c[data-d]');if(b){sel=b.dataset.
 $('prev').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m-2,1))).slice(0,7);calendar()};
 $('next').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m,1))).slice(0,7);calendar()};
 
-function showApp(remembered){$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();loadWeather();pushState().catch(()=>{});for(const k of queued.keys())scheduleAction(k);saveQueued();if(interrupted){interrupted=false;toast('전송 중 끊긴 변경이 있어요. 일정에 반영됐는지 확인해 주세요',8000)}}
+async function showApp(remembered){const sessionKey=key;await restoreDrafts();if(key!==sessionKey)return;$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();scheduleEditCheck(3000);loadWeather();pushState().catch(()=>{});for(const k of queued.keys())scheduleAction(k);saveQueued();if(interrupted){interrupted=false;toast('전송 중 끊긴 변경이 있어요. 일정에 반영됐는지 확인해 주세요',8000)}}
 function showLock(msg){cancelVoice();voiceMessage();resetEditor();$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
 
 $('f').onsubmit=async e=>{
@@ -933,12 +1002,12 @@ $('f').onsubmit=async e=>{
   try{
     const blob=await fetchBlob(),k=await deriveKey($('pw').value,blob);
     try{data=await decrypt(blob,k)}catch(_){return showLock('비밀번호가 맞지 않아요')}
-    key=k;
+    key=k;keySalt=blob.salt;
     if($('rem').checked)localStorage.setItem(KEY,JSON.stringify({salt:blob.salt,key:b64e(new Uint8Array(await crypto.subtle.exportKey('raw',k)))}));
-    showApp($('rem').checked);
+    await showApp($('rem').checked);
   }catch(err){showLock(err.message)}
 };
-$('forget').onclick=()=>{localStorage.removeItem(KEY);for(const timer of timers.values())clearTimeout(timer);timers.clear();for(const k of queued.keys())pend.delete(k);queued.clear();saveQueued();savePend();clearTimeout(toastTimer);$('toast').hidden=true;key=data=null;showLock()};
+$('forget').onclick=()=>{draftVersion++;key=data=null;keySalt='';localStorage.removeItem(KEY);localStorage.removeItem(DRAFTS);draftRaw=null;draftBlocked=false;draftWarning();adds.length=0;for(const id of ['saddf','maddf']){delete $(id).entryRequest;$(id).dataset.sending='false';$(id).querySelector('input').value='';entryMessage($(id));entryControls($(id))}for(const timer of timers.values())clearTimeout(timer);timers.clear();for(const k of queued.keys())pend.delete(k);queued.clear();saveQueued();savePend();clearTimeout(toastTimer);$('toast').hidden=true;showLock()};
 
 async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용을 받는다
   const sessionKey=key;if(!sessionKey)return;
@@ -947,14 +1016,14 @@ async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용�
 setInterval(()=>{const t=kstToday();if(t!==T&&data){T=t;viewYM=t.slice(0,7);sel=t;weekStart=mondayOf(t);render()}},60e3);
 setInterval(()=>{if(key)loadWeather()},18e5);   // 날씨는 30분마다
 setInterval(reload,300e3);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelVoice();else reload()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelVoice();saveDrafts()}else reload()});
 
 (async()=>{
   try{
     const saved=JSON.parse(localStorage.getItem(KEY)||'null'),blob=await fetchBlob();
     if(saved&&saved.salt===blob.salt){
-      const k=await crypto.subtle.importKey('raw',b64d(saved.key),'AES-GCM',true,['decrypt']);
-      try{data=await decrypt(blob,k);key=k;return showApp(true)}catch(_){localStorage.removeItem(KEY)}
+      const k=await crypto.subtle.importKey('raw',b64d(saved.key),'AES-GCM',true,['encrypt','decrypt']);
+      try{data=await decrypt(blob,k);key=k;keySalt=blob.salt;return showApp(true)}catch(_){localStorage.removeItem(KEY)}
     }
   }catch(_){}
   showLock();

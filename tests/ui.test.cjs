@@ -88,6 +88,304 @@ async function open(t, options = {}, weather = {}, init) {
   return {page, requests};
 }
 
+const draftStorage = 'schedule-drafts-v1';
+async function storedDraft(page) {
+  const raw = await page.evaluate(name => localStorage.getItem(name), draftStorage);
+  if(!raw) return null;
+  const envelope = JSON.parse(raw);
+  const material = await webcrypto.subtle.importKey('raw', new TextEncoder().encode('preview'), 'PBKDF2', false, ['deriveKey']);
+  const key = await webcrypto.subtle.deriveKey({name: 'PBKDF2', hash: 'SHA-256', salt: fixtureSalt, iterations: 1000}, material, {name: 'AES-GCM', length: 256}, false, ['decrypt']);
+  const plain = await webcrypto.subtle.decrypt({name: 'AES-GCM', iv: Buffer.from(envelope.iv, 'base64'), additionalData: new TextEncoder().encode(draftStorage)}, key, Buffer.from(envelope.ct, 'base64'));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+async function waitForDraft(page, matches) {
+  for(let i = 0; i < 50; i++) {
+    const draft = await storedDraft(page);
+    if(draft && matches(draft)) return draft;
+    await page.waitForTimeout(20);
+  }
+  assert.fail('the encrypted draft did not contain the latest input');
+}
+
+test('encrypted entry and edit drafts survive reload and only return after unlocking', async t => {
+  const {page, requests} = await open(t);
+  await page.locator('#sadd').fill('내일 고객에게 보낼 개인 초안');
+  await page.locator('#tabM').click();
+  await page.locator('#madd').fill('기억해 둘 개인 메모 초안');
+  await page.locator('#tabS').click();
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('아직 보내지 않은 수정 초안');
+  await page.locator('#editDate').fill(day(2));
+  await page.locator('#editTime').fill('17:30');
+  await page.locator('#editCat').selectOption('개인');
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  await page.locator('#editText').fill('다른 일정의 수정 초안');
+  await page.locator('#editClose').click();
+  await waitForDraft(page, d => d.sadd === '내일 고객에게 보낼 개인 초안' && d.madd === '기억해 둘 개인 메모 초안' && d.edits.some(e => e.id === 2 && e.draft.text === '다른 일정의 수정 초안'));
+  const storage = await page.evaluate(() => JSON.stringify({...localStorage, ...sessionStorage}));
+  for(const text of ['내일 고객에게 보낼 개인 초안', '기억해 둘 개인 메모 초안', '아직 보내지 않은 수정 초안', '다른 일정의 수정 초안']) assert.equal(storage.includes(text), false, 'private drafts never appear as plaintext in browser storage');
+  assert.equal(await page.evaluate(() => localStorage.getItem('schedule-key-v1')), null, 'draft retention does not remember the password key without consent');
+  await page.reload();
+  await page.locator('#lock').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#sadd').inputValue(), '');
+  await page.locator('#pw').fill('wrong-password');
+  await page.locator('#go').click();
+  await page.waitForFunction(() => document.getElementById('err').textContent.includes('비밀번호'));
+  assert.equal(await page.locator('#sadd').inputValue(), '');
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#sadd').inputValue(), '내일 고객에게 보낼 개인 초안');
+  assert.equal(await page.locator('#madd').inputValue(), '기억해 둘 개인 메모 초안');
+  await page.locator('#tl .ed[data-id="1"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '아직 보내지 않은 수정 초안');
+  assert.equal(await page.locator('#editDate').inputValue(), day(2));
+  assert.equal(await page.locator('#editTime').inputValue(), '17:30');
+  assert.equal(await page.locator('#editCat').inputValue(), '개인');
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '다른 일정의 수정 초안');
+  assert.equal(requests.some(r => r.url().includes('ntfy.sh')), false, 'restoring a draft never submits it');
+});
+
+test('a long pasted memo is encrypted and restored without exceeding browser argument limits', async t => {
+  const {page} = await open(t);
+  const text = '긴 메모 초안 '.repeat(10000);
+  await page.locator('#tabM').click();
+  await page.locator('#madd').fill(text);
+  await page.waitForFunction(name => localStorage.getItem(name) || !document.getElementById('draftWarning').hidden, draftStorage);
+  assert.equal(await page.locator('#draftWarning').isVisible(), false, 'a large paste stays eligible for encrypted draft storage');
+  await waitForDraft(page, d => d.madd === text);
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#madd').inputValue(), text);
+});
+
+test('a restored pending edit checks its receipt and keeps the same identity for a manual retry', async t => {
+  const {page, requests} = await open(t);
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('새로고침해도 중복 전송하지 않을 수정');
+  await page.locator('#editSave').click();
+  await waitForDraft(page, d => d.edits.some(e => e.id === 1 && e.sent));
+  const first = JSON.parse(requests.find(r => r.url().includes('ntfy.sh')).postDataJSON().text);
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  await page.locator('#actions .edit-resume[data-id="1"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '새로고침해도 중복 전송하지 않을 수정');
+  assert.equal(await page.locator('#editSave').isDisabled(), true);
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 1);
+  await page.clock.install();
+  await page.clock.fastForward(121000);
+  await page.waitForFunction(() => !document.getElementById('editSave').disabled);
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  const second = JSON.parse(requests.filter(r => r.url().includes('ntfy.sh')).at(-1).postDataJSON().text);
+  assert.equal(second.rid, first.rid);
+  const updated = structuredClone(fixture);
+  updated.items[0].text = second.changes.text;
+  updated.edit_results = [{rid: first.rid, id: 1, ok: true}];
+  const blob = await encryptFixture(updated);
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.evaluate(() => reload());
+  await page.waitForFunction(name => localStorage.getItem(name) === null, draftStorage);
+  assert.equal(await page.locator('#editor').isVisible(), false);
+  assert.match(await page.locator('#tl').innerText(), /새로고침해도 중복 전송하지 않을 수정/);
+});
+
+test('remembered-device unlock restores drafts and creates a fresh IV for later input', async t => {
+  const {page} = await open(t);
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#rem').check();
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  await page.locator('#sadd').fill('기억한 기기에서 복원할 초안');
+  await waitForDraft(page, d => d.sadd === '기억한 기기에서 복원할 초안');
+  const first = await page.evaluate(name => JSON.parse(localStorage.getItem(name)), draftStorage);
+  assert.equal(Buffer.from(first.iv, 'base64').length, 12);
+  await page.reload();
+  await page.locator('#app').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#sadd').inputValue(), '기억한 기기에서 복원할 초안');
+  await page.locator('#sadd').fill('기억한 기기에서 계속 고친 초안');
+  await waitForDraft(page, d => d.sadd === '기억한 기기에서 계속 고친 초안');
+  const second = await page.evaluate(name => JSON.parse(localStorage.getItem(name)), draftStorage);
+  assert.notEqual(second.iv, first.iv, 'each encryption uses its own random IV');
+  await page.locator('#sadd').fill('');
+  await page.waitForFunction(name => localStorage.getItem(name) === null, draftStorage);
+});
+
+test('forgetting the device clears encrypted drafts even when an old encryption finishes later', async t => {
+  const {page} = await open(t);
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#rem').check();
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  await page.locator('#madd').evaluate(el => {el.value = '지워야 할 메모'; el.dispatchEvent(new Event('input', {bubbles: true}))});
+  await waitForDraft(page, d => d.madd === '지워야 할 메모');
+  await page.evaluate(() => {
+    window.encryptionsToRelease = [];
+    const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+    crypto.subtle.encrypt = (...args) => encrypt(...args).then(result => new Promise(resolve => encryptionsToRelease.push(() => resolve(result))));
+  });
+  await page.locator('#sadd').fill('늦게 끝나도 다시 저장하면 안 되는 초안');
+  await page.waitForFunction(() => encryptionsToRelease.length > 0);
+  await page.locator('#forget').focus();
+  await page.keyboard.press('Enter');
+  await page.evaluate(async () => {encryptionsToRelease.forEach(release => release()); await Promise.resolve(); delete crypto.subtle.encrypt});
+  assert.equal(await page.evaluate(name => localStorage.getItem(name), draftStorage), null);
+  assert.equal(await page.locator('#sadd').inputValue(), '');
+  assert.equal(await page.locator('#madd').inputValue(), '');
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#sadd').inputValue(), '');
+  assert.equal(await page.locator('#madd').inputValue(), '');
+});
+
+test('blocked draft storage reports the limit while schedule submission remains available', async t => {
+  const {page, requests} = await open(t, {viewport: {width: 320, height: 568}}, {}, () => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(name, value) {if(name === 'schedule-drafts-v1') throw new DOMException('full', 'QuotaExceededError'); return setItem.call(this, name, value)};
+  });
+  await page.locator('#sadd').fill('연결된 앱에서 보낼 수 있는 내용');
+  await page.locator('#draftWarning').waitFor({state: 'visible'});
+  assert.match(await page.locator('#draftWarning').innerText(), /보관하지 못/);
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('보관 실패 때도 남을 수정');
+  assert.equal(await page.locator('#editDraftWarning').isVisible(), true);
+  assert.equal(await page.locator('#editSave').isDisabled(), false);
+  await page.setViewportSize({width: 320, height: 400});
+  const saveBox = await page.locator('#editSave').boundingBox();
+  assert.ok(saveBox.y >= 0 && saveBox.y + saveBox.height <= 400, 'a storage warning keeps Save reachable on a short phone viewport');
+  const footer = page.locator('.edit-foot');
+  const footerBox = await footer.boundingBox();
+  const clip = {x: footerBox.x + 1, y: Math.ceil(footerBox.y) + 1, width: footerBox.width - 2, height: Math.min(400, footerBox.y + footerBox.height) - Math.ceil(footerBox.y) - 2};
+  const footerWithFields = await page.screenshot({animations: 'disabled', caret: 'hide', clip});
+  await page.locator('#editFields').evaluate(el => {el.style.visibility = 'hidden'});
+  const footerWithoutFields = await page.screenshot({animations: 'disabled', caret: 'hide', clip});
+  await page.locator('#editFields').evaluate(el => {el.style.visibility = ''});
+  assert.equal(Buffer.compare(footerWithFields, footerWithoutFields), 0, 'scrolling fields never paint over the warning and Save controls');
+  if(process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'draft-storage-warning.png')});
+  await page.setViewportSize({width: 320, height: 568});
+  await page.locator('#editClose').click();
+  await page.locator('#saddf button[type=submit]').click();
+  await page.locator('#spend').waitFor({state: 'visible'});
+  assert.equal(requests.find(r => r.url().includes('ntfy.sh')).postDataJSON().text, '연결된 앱에서 보낼 수 있는 내용');
+});
+
+test('an unreadable draft never blocks unlock or gets silently overwritten', async t => {
+  for(const damage of ['ciphertext', 'salt']) {
+    const {page} = await open(t);
+    await page.locator('#sadd').fill('손상되기 전 보관한 초안');
+    await waitForDraft(page, d => d.sadd === '손상되기 전 보관한 초안');
+    const raw = await page.evaluate(({name, damage}) => {
+      const sealed = JSON.parse(localStorage.getItem(name));
+      if(damage === 'salt') sealed.salt = 'different-salt';
+      else sealed.ct = (sealed.ct[0] === 'A' ? 'B' : 'A') + sealed.ct.slice(1);
+      const raw = JSON.stringify(sealed); localStorage.setItem(name, raw); return raw;
+    }, {name: draftStorage, damage});
+    await page.reload();
+    await page.locator('#pw').fill('preview');
+    await page.locator('#go').click();
+    await page.locator('#app').waitFor({state: 'visible'});
+    assert.equal(await page.locator('#draftWarning').isVisible(), true);
+    assert.equal(await page.locator('#sadd').inputValue(), '');
+    await page.locator('#sadd').fill('현재 창에서 새로 작성한 내용');
+    assert.equal(await page.evaluate(name => localStorage.getItem(name), draftStorage), raw, 'the old encrypted record is kept for recovery');
+  }
+});
+
+test('another open window cannot silently overwrite a newer draft', async t => {
+  const {page} = await open(t);
+  await page.locator('#sadd').fill('첫 창의 시작 내용');
+  await waitForDraft(page, d => d.sadd === '첫 창의 시작 내용');
+  const other = await page.context().newPage();
+  const errors = []; other.on('pageerror', e => errors.push(e.message));
+  t.after(() => assert.deepEqual(errors, []));
+  await other.goto(base);
+  await other.locator('#pw').fill('preview');
+  await other.locator('#go').click();
+  await other.locator('#app').waitFor({state: 'visible'});
+  await page.locator('#sadd').fill('첫 창에서 더 고친 최신 내용');
+  await waitForDraft(page, d => d.sadd === '첫 창에서 더 고친 최신 내용');
+  await other.locator('#sadd').fill('둘째 창에서 고친 별도 내용');
+  await other.locator('#draftWarning').waitFor({state: 'visible'});
+  assert.match(await other.locator('#draftWarning').innerText(), /다른 창/);
+  assert.equal((await storedDraft(page)).sadd, '첫 창에서 더 고친 최신 내용');
+  assert.equal(await other.locator('#sadd').inputValue(), '둘째 창에서 고친 별도 내용');
+});
+
+test('the newest input wins when encryption promises finish out of order', async t => {
+  const {page} = await open(t);
+  await page.evaluate(() => {
+    window.encryptionsToRelease = [];
+    const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+    crypto.subtle.encrypt = (...args) => encrypt(...args).then(result => new Promise(resolve => encryptionsToRelease.push(() => resolve(result))));
+  });
+  await page.locator('#sadd').fill('먼저 입력한 초안');
+  await page.waitForFunction(() => encryptionsToRelease.length === 1);
+  await page.locator('#sadd').fill('나중에 고친 최신 초안');
+  await page.waitForFunction(() => encryptionsToRelease.length === 2);
+  await page.evaluate(() => encryptionsToRelease[1]());
+  await waitForDraft(page, d => d.sadd === '나중에 고친 최신 초안');
+  await page.evaluate(async () => {encryptionsToRelease[0](); await Promise.resolve(); delete crypto.subtle.encrypt});
+  assert.equal((await storedDraft(page)).sadd, '나중에 고친 최신 초안');
+});
+
+test('reopening during addition restores the text and warns before a manual resend', async t => {
+  const {page, requests} = await open(t);
+  let release;
+  const held = new Promise(resolve => {release = resolve});
+  t.after(() => release());
+  await page.context().route('https://ntfy.sh/**', async route => {await held; await route.fulfill({status: 200, body: '{}'})});
+  await page.locator('#sadd').fill('내일 전송 중이던 추가 내용');
+  const sending = page.waitForRequest('https://ntfy.sh/**');
+  await page.locator('#saddf button[type=submit]').click();
+  await sending;
+  await waitForDraft(page, d => d.submitting.saddf);
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#sadd').inputValue(), '내일 전송 중이던 추가 내용');
+  assert.equal(await page.locator('#svoiceState').isVisible(), true);
+  assert.match(await page.locator('#svoiceState').innerText(), /이미 등록됐는지/);
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 1, 'reopening never repeats an uncertain addition');
+  await page.locator('#sadd').fill('내일 새로 작성할 다음 내용');
+  await waitForDraft(page, d => d.sadd === '내일 새로 작성할 다음 내용' && !d.submitting.saddf);
+});
+
+test('a restored unsent edit can be discarded without deleting the schedule', async t => {
+  const {page, requests} = await open(t);
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('사용자가 버릴 수정 초안');
+  await page.locator('#editClose').click();
+  await waitForDraft(page, d => d.edits.some(e => e.id === 1));
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  await page.locator('#actions .edit-resume[data-id="1"]').click();
+  const discard = page.getByRole('button', {name: '초안 버리기', exact: true});
+  assert.equal(await discard.count(), 1, 'restored work has an explicit discard action');
+  await discard.click();
+  await page.waitForFunction(name => localStorage.getItem(name) === null, draftStorage);
+  assert.equal(await page.locator('#editor').isVisible(), false);
+  assert.equal(requests.some(r => r.url().includes('ntfy.sh')), false);
+  await page.locator('#tl .ed[data-id="1"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), fixture.items[0].text);
+  await page.locator('#editText').fill('반영 확인이 필요한 수정');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  assert.equal(await discard.isVisible(), false, 'an uncertain server request cannot be discarded as an unsent draft');
+});
+
 function mockSpeech() {
   window.speechInstances = [];
   window.SpeechRecognition = undefined;
@@ -177,6 +475,14 @@ test('speech can prepare a deletion command without deleting before confirmation
   await page.locator('#saddf').evaluate(form => form.requestSubmit());
   assert.equal(await page.locator('#actions .undo').count(), 0, 'a submit event during speech recognition cannot start deletion');
   await page.evaluate(() => speechInstances[0].onend());
+  await waitForDraft(page, d => d.sadd === '샵사십육 제거해줘');
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#sadd').inputValue(), '샵사십육 제거해줘');
+  assert.equal(await page.locator('#saddf button[type=submit]').innerText(), '삭제');
+  assert.equal(requests.some(r => r.url().includes('ntfy.sh')), false, 'restoring recognized speech never executes the command');
   await page.locator('#saddf button[type=submit]').click();
   assert.equal(await page.locator('#actions .undo[data-k="x|46"]').count(), 1);
 });
@@ -1006,7 +1312,8 @@ test('a stalled addition releases the form and keeps the unsent text', async t =
   await page.clock.runFor(16000);
   assert.equal(await page.locator('#saddf button[type=submit]').isDisabled(), false, 'stalled requests do not leave the form locked');
   assert.equal(await page.locator('#sadd').inputValue(), '끊겨도 남아 있어야 할 내용');
-  assert.match(await page.locator('#toast').innerText(), /보내지 못/);
+  assert.equal(await page.locator('#svoiceState').isVisible(), true);
+  assert.match(await page.locator('#svoiceState').innerText(), /이미 등록됐는지/);
 });
 
 test('failed action delivery restores the task and clears the pending undo state', async t => {
