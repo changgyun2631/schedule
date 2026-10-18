@@ -173,8 +173,8 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .add .voice[aria-pressed=true]{background:var(--redbg);color:var(--red)}
 .voice-stop,.voice[aria-pressed=true] .voice-mic{display:none}
 .voice[aria-pressed=true] .voice-stop{display:block}
-.voice-state{grid-column:1/-1;color:var(--mut);font-size:13px}
-.voice-state.error{color:var(--red)}
+.entry-state{grid-column:1/-1;color:var(--mut);font-size:13px}
+.entry-state.error{color:var(--red)}
 .entry-hint{grid-column:1/-1;color:var(--mut);font-size:12px}
 .add button:disabled{opacity:.6}
 .btns{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;max-width:108px}
@@ -237,7 +237,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
 @media(prefers-reduced-motion:no-preference){button{transition:background-color .15s,color .15s,opacity .15s}}
 @media(prefers-reduced-motion:no-preference){
   .hero-mark{animation:logo-drift 20s ease-in-out infinite}
-  .mark-light:before{animation:logo-breeze 12s cubic-bezier(.4,0,.2,1) infinite}
+  .mark-light:before{animation:logo-breeze 1.5s cubic-bezier(.4,0,.2,1) infinite}
 }
 @keyframes logo-drift{0%,100%{transform:translate3d(0,0,0) rotate(-1deg)}50%{transform:translate3d(-4px,4px,0) rotate(1deg)}}
 @keyframes logo-breeze{0%,15%{transform:translate3d(-100%,0,0) rotate(-22deg);opacity:0}35%{opacity:.18}65%{opacity:.18}85%,100%{transform:translate3d(450%,0,0) rotate(-22deg);opacity:0}}
@@ -295,7 +295,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
     <input id="sadd" placeholder="예: 내일 3시 미팅" autocomplete="off" enterkeyhint="send" aria-label="일정 추가" aria-describedby="svoiceState">
     <button type="button" class="voice" id="svoice" aria-label="음성으로 일정 입력" aria-pressed="false" aria-controls="sadd" aria-describedby="svoiceState"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><g class="voice-mic"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M9 22h6"/></g><rect class="voice-stop" x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></svg></button>
     <button type="submit">추가</button>
-    <span class="voice-state" id="svoiceState" role="status" aria-live="polite" aria-atomic="true" hidden></span>
+    <span class="entry-state" id="svoiceState" role="status" aria-live="polite" aria-atomic="true" hidden></span>
   </form>
   <div id="spend" class="pending" hidden></div>
   <div class="schedule-tools">
@@ -333,7 +333,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
   </div>
   <div id="vMemo" role="tabpanel" aria-labelledby="tabM" hidden>
     <div class="mh"><h1>메모장</h1><span class="sub" id="msub"></span></div>
-    <form class="add" id="maddf"><label for="madd">기억할 내용 추가</label><input id="madd" placeholder="예: 우유 사기" autocomplete="off" enterkeyhint="send" aria-describedby="maddhint"><button type="submit">추가</button><span class="entry-hint" id="maddhint">알림이 필요하면 날짜와 시간을 함께 적으세요. 예: 10/24 아빠 생신 [09:00]</span></form>
+    <form class="add" id="maddf"><label for="madd">기억할 내용 추가</label><input id="madd" placeholder="예: 우유 사기" autocomplete="off" enterkeyhint="send" aria-describedby="maddhint mcommandState"><button type="submit">추가</button><span class="entry-hint" id="maddhint">알림이 필요하면 날짜와 시간을 함께 적으세요. 예: 10/24 아빠 생신 [09:00]</span><span class="entry-state" id="mcommandState" role="status" aria-live="polite" hidden></span></form>
     <div id="mpend" class="pending" hidden></div>
     <div class="card"><h2>다가오는 메모</h2><ul id="ml1"></ul></div>
     <div class="card"><h2>메모</h2><ul id="ml2"></ul></div>
@@ -498,23 +498,62 @@ function scheduleAction(k){
     catch(_){if(leaving||queued.get(k)!==p)return;queued.delete(k);pend.delete(k);saveQueued();savePend();render();toast(`보내지 못했어요. 텔레그램에서 "${cmd} ${p.id}"로 해 주세요`,8000)}
   },Math.max(0,p.ts+5000-Date.now())));
 }
-document.addEventListener('click',e=>{
-  const u=e.target.closest('.undo');
-  if(u){const k=u.dataset.k;if(queued.get(k)?.state!=='queued')return;clearTimeout(timers.get(k));timers.delete(k);queued.delete(k);pend.delete(k);saveQueued();savePend();$('toast').hidden=true;render();return}
-  const b=e.target.closest('.dn,.sn,.rm');if(!b)return;
-  const id=+b.dataset.id,a=b.classList.contains('dn')?'done':b.classList.contains('sn')?'snooze':'del';
-  if(edits.get(id)?.command){openEdit(id);return}
+function queueAction(a,id,date,rec=false){
+  if(edits.get(id)?.command){openEdit(id);return false}
+  if(changing(id)){toast('이 일정은 다른 변경을 처리 중이에요. 반영 후 다시 시도해 주세요.',5000);return false}
   if(!(data.done&&data.done.topic)){   // 열쇠가 없으면 완료만 예전 방식으로
     if(a!=='done')return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
     const q=new URLSearchParams({title:`done ${id}`,body:'웹페이지에서 보낸 완료 요청입니다.'});
     window.open(`https://github.com/${REPO}/issues/new?${q}`,'_blank','noopener');return}
-  const k=a==='del'?'x|'+id:id+'|'+b.dataset.d,doing=b.dataset.rec?'반복 일정 전체를 지워요':ACT[a][0];
-  if(queued.has(k))return;
-  const ts=Date.now();queued.set(k,{a,id,date:b.dataset.d,ts,state:'queued'});
+  const k=a==='del'?'x|'+id:id+'|'+date,doing=rec?'반복 일정 전체를 지워요':ACT[a][0];
+  if(queued.has(k))return false;
+  const ts=Date.now();queued.set(k,{a,id,date,ts,state:'queued'});
   pend.set(k,ts);saveQueued();savePend();render();
   toast(`#${id} ${doing} <button class="undo" data-k="${k}">되돌리기</button>`);
   scheduleAction(k);
+  return true;
+}
+document.addEventListener('click',e=>{
+  const u=e.target.closest('.undo');
+  if(u){const k=u.dataset.k;if(queued.get(k)?.state!=='queued')return;clearTimeout(timers.get(k));timers.delete(k);queued.delete(k);pend.delete(k);saveQueued();savePend();$('toast').hidden=true;render();return}
+  const b=e.target.closest('.dn,.sn,.rm');if(!b)return;
+  queueAction(b.classList.contains('dn')?'done':b.classList.contains('sn')?'snooze':'del',+b.dataset.id,b.dataset.d,!!b.dataset.rec);
 });
+const deleteEnding=/\s*(?:삭제|제거)\s*해\s*줘[.!?。]*\s*$/;
+function spokenNumber(text){
+  const digits='영일이삼사오육칠팔구',units={십:10,백:100,천:1000};
+  text=text.replace(/\s/g,'').replace(/공/g,'영');
+  if(/^\d+$/.test(text))return Number(text);
+  if(!/^[영일이삼사오육칠팔구십백천]+$/.test(text))return NaN;
+  if(!/[십백천]/.test(text))return Number([...text].map(c=>digits.indexOf(c)).join(''));
+  if(text.includes('영'))return NaN;
+  let total=0,pending=null,last=10000;
+  for(const c of text){
+    if(c in units){if(units[c]>=last||pending===0)return NaN;total+=(pending??1)*units[c];last=units[c];pending=null}
+    else{if(pending!==null)return NaN;pending=digits.indexOf(c)}
+  }
+  return total+(pending??0);
+}
+function deleteTarget(text){
+  const target=text.replace(deleteEnding,'').trim();
+  let m=target.match(/^(?:#|샵|샾)\s*(.+?)(?:\s*번)?$/)||target.match(/^(\d+)(?:\s*번)?$/);
+  if(m){const id=spokenNumber(m[1]);return Number.isSafeInteger(id)&&id>0?{id}: {error:'일정 번호를 확인해 주세요. 예: #46 삭제해줘'} }
+  const now=parse(T);let year=now.getUTCFullYear(),month=now.getUTCMonth()+1,day,date,title;
+  if(m=target.match(/^(오늘|내일|모레)\s*(.+)$/)){date=addDays(T,{오늘:0,내일:1,모레:2}[m[1]]);title=m[2]}
+  else if(m=target.match(/^(?:(\d{4})년\s*)?(\d{1,2})월\s*(\d{1,2})일\s*(.+)$/)){year=m[1]?+m[1]:year;month=+m[2];day=+m[3];title=m[4]}
+  else if(m=target.match(/^(?:(\d{4})[/-])?(\d{1,2})[/-](\d{1,2})\s+(.+)$/)){year=m[1]?+m[1]:year;month=+m[2];day=+m[3];title=m[4]}
+  else if(m=target.match(/^(\d{1,2})일\s*(.+)$/)){day=+m[1];title=m[2]}
+  else return {error:'삭제할 날짜·내용 또는 번호를 적어 주세요. 예: 20일 책 반납하기 삭제해줘 · #46 제거해줘'};
+  if(!date){date=`${year}-${pad(month)}-${pad(day)}`;if(toStr(parse(date))!==date)return {error:'삭제할 일정의 날짜가 올바르지 않아요.'}}
+  const normalize=s=>s.normalize('NFC').replace(/\s/g,'');
+  const matches=[...new Map([...data.items,...(data.memos||[])].filter(x=>x.date===date&&normalize(x.text)===normalize(title)).map(x=>[x.id,x])).values()];
+  if(!matches.length)return {error:'해당 날짜·내용의 일정이 없어요. 날짜와 내용을 확인하거나 #번호로 지정해 주세요.'};
+  if(matches.length>1)return {error:`같은 일정이 여러 개예요. ${matches.slice(0,5).map(x=>'#'+x.id).join(', ')} 중 번호로 지정해 주세요.`};
+  const x=matches[0];
+  if(x.ev)return {error:'자동 경기 일정은 이 입력으로 삭제할 수 없어요.'};
+  if(x.k&&x.k!=='o')return {error:`반복 일정이에요. 반복 전체를 지우려면 #${x.id} 삭제해줘로 지정해 주세요.`};
+  return {id:x.id};
+}
 // 추가 칸: 글을 그대로 봇에 보낸다(텔레그램에 보내는 것과 같은 형식). 반영될 때까지 '보냄'으로 보여 준다.
 const adds=[];
 const core=t=>t.replace(/#\S+/g,'').replace(/\[\d{1,2}:\d{2}\]/g,'').replace(/^\s*(?:(?:\d{4}\/)?\d{1,2}\/\d{1,2}|\+\d+|매달\s*\d+일?|매주\s*\S)\s+/,'').replace(/^\d{1,2}:\d{2}\s+/,'').trim();
@@ -524,10 +563,13 @@ function pendAdds(){
   for(const [id,memo] of [['spend',0],['mpend',1]]){const xs=adds.filter(x=>x.memo===memo);$(id).hidden=!xs.length;$(id).innerHTML=xs.map(x=>`<div>⏳ 보냄 · 곧 반영돼요: ${esc(x.text)}</div>`).join('')}
 }
 let voice=null;
-function voiceMessage(message='',error=false){$('svoiceState').textContent=message;$('svoiceState').hidden=!message;$('svoiceState').classList.toggle('error',error)}
+function entryMessage(form,message='',error=false){const state=form.querySelector('.entry-state');state.textContent=message;state.hidden=!message;state.classList.toggle('error',error)}
+function voiceMessage(message='',error=false){entryMessage($('saddf'),message,error)}
 function entryControls(form){
   const sending=form.dataset.sending==='true';
-  form.querySelector('button[type=submit]').disabled=sending||(form.id==='saddf'&&!!voice);
+  const button=form.querySelector('button[type=submit]');
+  button.disabled=sending||(form.id==='saddf'&&!!voice);
+  button.textContent=sending?'보내는 중':deleteEnding.test(form.querySelector('input').value)?'삭제':'추가';
   if(form.id==='saddf')$('svoice').disabled=sending||!!voice?.stopping;
 }
 function finishVoice(session,message='',error=false){
@@ -559,6 +601,7 @@ $('svoice').onclick=()=>{
       if(voice!==session||key!==session.key)return;
       const text=Array.from(e.results,result=>result[0].transcript).join(' ').trim();session.heard=!!text;
       $('sadd').value=[session.prefix,text].filter(Boolean).join(' ');
+      entryControls($('saddf'));
     };
     rec.onend=()=>finishVoice(session,session.heard?'':'음성이 들리지 않았어요. 마이크를 눌러 다시 말해 주세요.');
     rec.onerror=e=>{
@@ -571,15 +614,26 @@ $('svoice').onclick=()=>{
   }catch(_){if(session){finishVoice(session,'마이크를 시작하지 못했어요. 권한을 확인한 뒤 다시 눌러 주세요.',true);try{session.rec.abort()}catch(_){}}else voiceMessage('이 브라우저에서 마이크를 시작할 수 없어요.',true)}
 };
 $('sadd').addEventListener('input',cancelVoice);
+for(const id of ['saddf','maddf'])$(id).addEventListener('input',()=>{if(!voice)entryMessage($(id));entryControls($(id))});
 addEventListener('pagehide',cancelVoice);
 for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=async e=>{
+  const form=$(f),btn=form.querySelector('button[type=submit]');
+  if(btn.disabled||!key||!data){e.preventDefault();return}
   e.preventDefault();const input=$(inp).value;let text=input.trim();if(!text)return;
+  if(deleteEnding.test(text)){
+    const target=deleteTarget(text);if(target.error)return entryMessage(form,target.error,true);
+    const x=[...data.items,...data.rules,...(data.memos||[])].find(x=>x.id===target.id);
+    if(x?.ev)return entryMessage(form,'자동 경기 일정은 이 입력으로 삭제할 수 없어요.',true);
+    if(changing(target.id))return entryMessage(form,'이 일정은 다른 변경을 처리 중이에요. 반영 후 다시 시도해 주세요.',true);
+    if(queueAction('del',target.id,x?.date,data.rules.some(r=>r.id===target.id)||(!!x?.k&&x.k!=='o'))){$(inp).value='';entryMessage(form);entryControls(form)}
+    return;
+  }
   if(!(data.done&&data.done.topic))return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
   if(memo&&!/#메모/.test(text))text='#메모 '+text;
-  const form=$(f),btn=form.querySelector('button[type=submit]');if(btn.disabled)return;const sessionKey=key;form.dataset.sending='true';entryControls(form);btn.textContent='보내는 중';
+  const sessionKey=key;form.dataset.sending='true';entryControls(form);
   try{await sendAct('add',{text});if(key!==sessionKey)return;if($(inp).value===input)$(inp).value='';adds.push({text,memo,ts:Date.now()});pendAdds();toast('보냈어요 · 1분쯤 뒤 반영돼요(결과는 텔레그램에도 와요)',5000);setTimeout(reload,7e4)}
   catch(_){if(key===sessionKey)toast('보내지 못했어요. 입력한 내용은 남겨 두었어요',8000)}
-  finally{form.dataset.sending='false';entryControls(form);btn.textContent='추가'}
+  finally{form.dataset.sending='false';entryControls(form)}
 };
 const edits=new Map(),EDIT_FIELDS=[['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd']];
 let editing=null,editTimer;

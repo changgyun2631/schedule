@@ -100,6 +100,113 @@ function mockSpeech() {
   };
 }
 
+function deletionFixture() {
+  const payload = structuredClone(fixture);
+  payload.items.push({id: 46, date: today.slice(0, 8) + '20', k: 'o', text: '책 반납하기', c: '개인', edit: {rev: 'd'.repeat(64), kind: 'once', date: today.slice(0, 8) + '20', memo: false}});
+  return payload;
+}
+
+test('date and spoken number deletion commands use the existing signed deletion and undo flow', async t => {
+  const {page, requests} = await open(t, {}, {payload: deletionFixture()});
+  await page.clock.install();
+  const commands = ['20일 책 반납하기 제거해줘', '20일 책반납하기 삭제해줘', '샵사십육 삭제해줘', '샵사십육 제거해줘', '#46 삭제해줘', '샵 사십 육 제거 해 줘.'];
+  for(const text of commands) {
+    await page.locator('#sadd').fill(text);
+    assert.equal(await page.locator('#saddf button[type=submit]').innerText(), '삭제', 'the button states the action before it is run');
+    await page.locator('#saddf button[type=submit]').click();
+    assert.equal(await page.locator('#actions .undo[data-k="x|46"]').count(), 1, text);
+    assert.equal(await page.locator('#sadd').inputValue(), '');
+    if(text !== commands.at(-1)) await page.locator('#actions .undo[data-k="x|46"]').click();
+  }
+  assert.equal(requests.some(r => r.url().includes('ntfy.sh')), false, 'deletion keeps the undo period');
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('삭제를 보냈어요'));
+  const actions = requests.filter(r => r.url().includes('ntfy.sh')).map(r => r.postDataJSON());
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].a, 'del');
+  assert.equal(actions[0].id, 46);
+  const {createHmac} = require('node:crypto');
+  assert.equal(actions[0].sig, createHmac('sha256', fixture.done.key).update(`del|46||${actions[0].ts}`).digest('hex'));
+});
+
+test('ambiguous, invalid and missing deletion targets never become new schedules', async t => {
+  const payload = deletionFixture();
+  payload.items.push({...structuredClone(payload.items.at(-1)), id: 47});
+  const {page, requests} = await open(t, {}, {payload});
+  for(const text of ['20일 책반납하기 삭제해줘', '20일 없는 내용 제거해줘', '2월 30일 책 반납하기 삭제해줘', '샵사십십육 삭제해줘', '샵사십영 제거해줘', '삭제해줘']) {
+    await page.locator('#sadd').fill(text);
+    await page.locator('#saddf button[type=submit]').click();
+    assert.equal(await page.locator('#sadd').inputValue(), text);
+    assert.equal(await page.locator('#actions .undo').count(), 0);
+    assert.equal(requests.some(r => r.url().includes('ntfy.sh')), false, text);
+    assert.equal(await page.locator('#svoiceState').isVisible(), true, 'command feedback stays next to the input');
+  }
+  await page.locator('#tabM').click();
+  await page.locator('#madd').fill('20일 없는 내용 제거해줘');
+  await page.locator('#maddf button[type=submit]').click();
+  assert.equal(await page.locator('#mcommandState').isVisible(), true, 'memo entry also reports an unresolved deletion');
+  assert.equal(requests.some(r => r.url().includes('ntfy.sh')), false);
+  await page.locator('#tabS').click();
+  await page.locator('#sadd').waitFor({state: 'visible'});
+  await page.locator('#sadd').fill('#47 제거해줘');
+  await page.locator('#saddf button[type=submit]').click();
+  assert.equal(await page.locator('#actions .undo[data-k="x|47"]').count(), 1, 'an explicit number resolves an ambiguous title');
+});
+
+test('deletion words inside an ordinary schedule or memo still add the content', async t => {
+  const {page, requests} = await open(t);
+  await page.locator('#sadd').fill('내일 삭제할 파일 확인');
+  assert.equal(await page.locator('#saddf button[type=submit]').innerText(), '추가');
+  await page.locator('#saddf button[type=submit]').click();
+  await page.locator('#spend').waitFor({state: 'visible'});
+  await page.locator('#tabM').click();
+  await page.locator('#madd').fill('삭제해줘라는 말 기억');
+  await page.locator('#maddf button[type=submit]').click();
+  await page.locator('#mpend').waitFor({state: 'visible'});
+  const actions = requests.filter(r => r.url().includes('ntfy.sh')).map(r => r.postDataJSON());
+  assert.deepEqual(actions.map(a => [a.a, a.text]), [['add', '내일 삭제할 파일 확인'], ['add', '#메모 삭제해줘라는 말 기억']]);
+});
+
+test('speech can prepare a deletion command without deleting before confirmation', async t => {
+  const {page, requests} = await open(t, {}, {payload: deletionFixture()}, mockSpeech);
+  await page.locator('#svoice').click();
+  await page.evaluate(() => speechInstances[0].emit('샵사십육 제거해줘'));
+  assert.equal(await page.locator('#saddf button[type=submit]').innerText(), '삭제');
+  assert.equal(await page.locator('#saddf button[type=submit]').isDisabled(), true);
+  assert.equal(requests.some(r => r.url().includes('ntfy.sh')), false);
+  await page.locator('#saddf').evaluate(form => form.requestSubmit());
+  assert.equal(await page.locator('#actions .undo').count(), 0, 'a submit event during speech recognition cannot start deletion');
+  await page.evaluate(() => speechInstances[0].onend());
+  await page.locator('#saddf button[type=submit]').click();
+  assert.equal(await page.locator('#actions .undo[data-k="x|46"]').count(), 1);
+});
+
+test('text deletion keeps the edit lock and distinguishes an occurrence from a whole recurring rule', async t => {
+  const payload = deletionFixture();
+  payload.items.push({id: 7, date: today, k: 'w', text: '업무 회고', c: '업무'});
+  const {page} = await open(t, {}, {payload});
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('반영을 기다리는 수정');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  await page.locator('#editClose').click();
+  await page.locator('#sadd').fill('#1 삭제해줘');
+  await page.locator('#saddf button[type=submit]').click();
+  assert.equal(await page.locator('#editor').isVisible(), true);
+  assert.equal(await page.locator('#actions .undo').count(), 0);
+  assert.equal(await page.locator('#sadd').inputValue(), '#1 삭제해줘');
+  await page.locator('#editClose').click();
+  await page.locator('#sadd').fill('오늘 업무회고 제거해줘');
+  await page.locator('#saddf button[type=submit]').click();
+  assert.equal(await page.locator('#actions .undo').count(), 0, 'a dated occurrence never silently deletes the whole recurring rule');
+  assert.equal(await page.locator('#svoiceState').isVisible(), true, 'another pending action cannot hide command feedback');
+  assert.match(await page.locator('#svoiceState').innerText(), /반복 전체/);
+  await page.locator('#sadd').fill('#7 삭제해줘');
+  await page.locator('#saddf button[type=submit]').click();
+  assert.equal(await page.locator('#actions .undo[data-k="x|7"]').count(), 1);
+  assert.match(await page.locator('#toast').innerText(), /반복 일정 전체/);
+});
+
 test('voice input replaces interim speech and only sends after explicit confirmation', async t => {
   const {page, requests} = await open(t, {}, {}, mockSpeech);
   await page.locator('#sadd').fill('내일');
@@ -224,10 +331,12 @@ test('the logo light flows without moving content and respects reduced motion', 
   assert.equal(await mark.getAttribute('aria-hidden'), 'true');
   const contentBefore = await page.locator('.date-heading').boundingBox();
   assert.ok(await mark.evaluate(el => el.getAnimations({subtree: true}).length) > 0);
+  const period = await mark.evaluate(el => el.getAnimations({subtree: true}).find(animation => animation.animationName === 'logo-breeze').effect.getTiming().duration);
+  assert.equal(period, 1500, 'the light repeats every 1.5 seconds');
   await mark.evaluate(el => el.getAnimations({subtree: true}).forEach(animation => {animation.pause(); animation.currentTime = 0}));
   const before = await mark.evaluate(el => getComputedStyle(el.querySelector('.mark-light'), '::before').transform);
   if (process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'allow', path: join(process.env.UI_SCREENSHOTS, 'mobile-logo-rest.png')});
-  await mark.evaluate(el => el.getAnimations({subtree: true}).forEach(animation => {animation.currentTime = 6000}));
+  await mark.evaluate((el, period) => el.getAnimations({subtree: true}).forEach(animation => {animation.currentTime = period / 2}), period);
   const after = await mark.evaluate(el => getComputedStyle(el.querySelector('.mark-light'), '::before').transform);
   assert.notEqual(after, before, 'the highlight travels across the logo');
   assert.deepEqual(await page.locator('.date-heading').boundingBox(), contentBefore, 'decoration never moves the date or weather');
