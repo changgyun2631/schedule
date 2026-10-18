@@ -1530,13 +1530,63 @@ test('a stalled addition releases the form and keeps the unsent text', async t =
   assert.match(await page.locator('#svoiceState').innerText(), /이미 등록됐는지/);
 });
 
+test('multiple delivery errors stay visible beside another action and survive its success notice', async t => {
+  const {page, requests} = await open(t, {viewport: {width: 320, height: 568}});
+  await page.clock.install();
+  let release;
+  const held = new Promise(resolve => {release = resolve});
+  t.after(() => release());
+  await page.context().route('https://ntfy.sh/**', async route => {
+    if(route.request().postDataJSON().id !== 3) return route.fulfill({status: 503, body: ''});
+    await held;
+    await route.fulfill({status: 200, body: '{}'});
+  });
+  for(const id of [1, 2, 3]) await page.locator('#tl .dn[data-id="' + id + '"]').click();
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('#2 완료'));
+  const notice = page.locator('#actions .action-error');
+  assert.equal(await notice.isVisible(), true, 'errors remain readable while the action panel hides the ordinary toast');
+  assert.match(await notice.innerText(), /#1 완료/);
+  assert.match(await notice.innerText(), /#2 완료/);
+  assert.equal(await page.locator('#tl .dn[data-id="1"], #tl .dn[data-id="2"]').count(), 2);
+  release();
+  await page.waitForFunction(() => document.getElementById('actions').textContent.includes('#3 완료 반영 확인 중'));
+  assert.match(await notice.innerText(), /#1 완료/);
+  assert.match(await notice.innerText(), /#2 완료/);
+  const box = await notice.boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 320 && box.y >= 0 && box.y + box.height <= 568, 'the error messages fit the phone viewport');
+  if(process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'simultaneous-action-errors.png')});
+  await page.clock.runFor(8500);
+  assert.equal(await notice.count(), 0, 'the error notice expires without removing the remaining result check');
+  assert.match(await page.locator('#actions').innerText(), /#3 완료 반영 확인 중/);
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 3);
+});
+
+test('an expired result check remains readable beside an unsent edit draft', async t => {
+  const {page} = await open(t);
+  await page.clock.install();
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'));
+  await page.locator('#tl .ed[data-id="2"]').click();
+  await page.locator('#editText').fill('오류가 나도 보관할 다른 수정 초안');
+  await page.locator('#editClose').click();
+  await page.clock.fastForward(900001);
+  await page.waitForFunction(() => document.querySelector('#tl .dn[data-id="1"]'));
+  assert.equal(await page.locator('#actions .action-error').isVisible(), true);
+  assert.match(await page.locator('#actions .action-error').innerText(), /#1.*반영을 확인하지 못/);
+  assert.match(await page.locator('#actions').innerText(), /#2 수정 작성 중/);
+  await page.locator('#actions .edit-resume[data-id="2"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '오류가 나도 보관할 다른 수정 초안');
+});
+
 test('failed action delivery restores the task and clears the pending undo state', async t => {
   const {page} = await open(t);
   await page.clock.install();
   await page.context().route('https://ntfy.sh/**', route => route.fulfill({status: 503, body: ''}));
   await page.locator('#tl .dn[data-id="1"]').click();
   await page.clock.runFor(5500);
-  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보내지 못'), null, {timeout: 1500});
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('전송을 확인하지 못'), null, {timeout: 1500});
   assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1);
   assert.equal(await page.locator('#actions').isVisible(), false);
   await page.reload();

@@ -192,6 +192,7 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .action-status{position:fixed;z-index:21;left:16px;right:16px;bottom:24px;max-width:600px;max-height:35vh;overflow:auto;margin:0 auto;padding:8px 12px;background:var(--card);border:1px solid var(--ln);border-radius:10px;font-size:13px;color:var(--mut);box-shadow:0 4px 16px #0002}
 .action-status>div{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
 .action-status .undo{margin-left:0;flex:none;color:var(--acc)}
+.action-status .action-error{color:var(--red);padding:8px 0;border-bottom:1px solid var(--ln)}
 .edit-resume,.check-action{flex:none;min-height:44px;border:1px solid var(--ln);border-radius:8px;background:transparent;color:var(--acc);padding:0 12px;font-size:13px}
 .check-action[aria-disabled=true]{opacity:.6;cursor:progress}
 html:has(#actions:not([hidden])){scroll-padding-bottom:calc(35vh + 100px + env(safe-area-inset-bottom))}
@@ -467,22 +468,29 @@ const gone=id=>pend.has('x|'+id);   // 지운 것(반영될 때까지 숨김)
 const changing=id=>[...pend.keys()].some(k=>k==='x|'+id||k.startsWith(id+'|'));
 function prunePend(){   // 새 데이터에서 끝났거나(지운 건 사라졌거나) 15분이 지난 것은 마스크를 푼다
   const by=new Map(data.items.map(x=>[pk(x),x])),ids=new Set([...data.items,...data.rules,...(data.memos||[])].map(x=>String(x.id)));
-  let changed=false,expired=false;
+  let changed=false;const expired=new Set();
   for(const [k,t] of [...pend]){
     if(queued.has(k)&&queued.get(k).state!=='checking')continue;
     const del=k.startsWith('x|');
     const confirmed=del?!ids.has(k.slice(2)):(!by.has(k)||by.get(k).done);
-    if(Date.now()-t>=9e5||confirmed){expired||=!confirmed;pend.delete(k);queued.delete(k);changed=true}
+    if(Date.now()-t>=9e5||confirmed){if(!confirmed)expired.add(k.startsWith('x|')?k.slice(2):k.split('|')[0]);pend.delete(k);queued.delete(k);changed=true}
   }
   if(changed)saveQueued();
   savePend();
-  if(expired)toast('반영을 확인하지 못한 변경이 있어요. 현재 일정 상태를 확인해 주세요.',8000);
+  if(expired.size)toast(`${[...expired].map(id=>'#'+esc(id)).join(', ')} 변경의 반영을 확인하지 못했어요. 현재 일정 상태를 확인해 주세요.`,8000,true);
   return changed;
 }
 let toastTimer,leaving=false;const timers=new Map();
 addEventListener('pagehide',()=>leaving=true);
 addEventListener('pageshow',()=>leaving=false);
-function toast(html,ms){const t=$('toast');t.hidden=false;t.innerHTML=html;clearTimeout(toastTimer);if(ms)toastTimer=setTimeout(()=>t.hidden=true,ms)}
+function toast(html,ms,error=false){
+  const t=$('toast'),activeError=!t.hidden&&t.dataset.error==='true';
+  if(activeError&&!error)return;
+  if(activeError&&error)html=t.innerHTML+'<br>'+html;
+  t.hidden=false;t.innerHTML=html;t.dataset.error=String(error);clearTimeout(toastTimer);
+  if(ms)toastTimer=setTimeout(()=>{t.hidden=true;actionStatus()},ms);
+  actionStatus();if(error)$('actions').scrollTop=0;
+}
 const hex=u=>[...new Uint8Array(u)].map(b=>b.toString(16).padStart(2,'0')).join('');
 // 내 PC의 봇에게 보내는 요청: 서명 = HMAC(열쇠, 'a|id|text|ts').
 async function sendAct(a,{id,text}={}){
@@ -500,8 +508,10 @@ function actionStatus(){
   const checking=(k,id,label,ts)=>`<div><span>#${esc(id)} ${label} ${Date.now()-ts<120000?'반영 확인 중':'반영 확인 지연'}</span><button class="check-action" data-k="${esc(k)}" aria-label="#${esc(id)} 반영 다시 확인">다시 확인</button></div>`;
   const waiting=[...pend].filter(([k])=>!queued.has(k)).map(([k,ts])=>checking(k,k.startsWith('x|')?k.slice(2):k.split('|')[0],'변경',ts)).join('');
   const actions=[...queued].map(([k,p])=>p.state==='checking'?checking(k,p.id,ACT[p.a][2],p.sentAt):`<div><span>#${p.id} ${ACT[p.a][2]} ${p.state==='queued'?'대기 중':'보내는 중'}</span>${p.state==='queued'?`<button class="undo" data-k="${esc(k)}" aria-label="#${p.id} ${ACT[p.a][2]} 되돌리기">되돌리기</button>`:''}</div>`).join('')+waiting+edit;
+  const notice=!$('toast').hidden&&$('toast').dataset.error==='true'?`<div class="action-error"><span>${$('toast').innerHTML}</span></div>`:'';
+  const content=actions?notice+actions:'';
   $('actions').hidden=!actions;
-  if($('actions').innerHTML!==actions){$('actions').innerHTML=actions;if(focusKey)([...$('actions').querySelectorAll('.check-action')].find(b=>b.dataset.k===focusKey)||document.querySelector('.tab.on'))?.focus({preventScroll:true})}
+  if($('actions').innerHTML!==content){$('actions').innerHTML=content;if(focusKey)([...$('actions').querySelectorAll('.check-action')].find(b=>b.dataset.k===focusKey)||document.querySelector('.tab.on'))?.focus({preventScroll:true})}
 }
 function scheduleAction(k){
   const p=queued.get(k);if(!p||p.state!=='queued'||timers.has(k))return;
@@ -510,14 +520,14 @@ function scheduleAction(k){
     const [,sent,cmd]=ACT[p.a];
     p.state='sending';saveQueued();actionStatus();
     try{await sendAct(p.a,{id:p.id,...(p.a==='done'&&data.done_dates===1?{text:p.date}:{})});if(queued.get(k)!==p)return;p.state='checking';p.sentAt=Date.now();saveQueued();savePend();render();scheduleChangeCheck(3000);toast(`#${p.id} ${sent} 보냈어요 · 곧 반영돼요`,4000)}
-    catch(_){if(leaving||queued.get(k)!==p)return;queued.delete(k);pend.delete(k);saveQueued();savePend();render();toast(`보내지 못했어요. 텔레그램에서 "${cmd} ${p.id}"로 해 주세요`,8000)}
+    catch(_){if(leaving||queued.get(k)!==p)return;queued.delete(k);pend.delete(k);saveQueued();savePend();render();toast(`#${p.id} ${cmd} 전송을 확인하지 못했어요. 일정 상태를 먼저 확인해 주세요.`,8000,true)}
   },Math.max(0,p.ts+5000-Date.now())));
 }
 function queueAction(a,id,date,rec=false){
   if(edits.get(id)?.command){openEdit(id);return false}
-  if(changing(id)){toast('이 일정은 다른 변경을 처리 중이에요. 반영 후 다시 시도해 주세요.',5000);return false}
+  if(changing(id)){toast('이 일정은 다른 변경을 처리 중이에요. 반영 후 다시 시도해 주세요.',5000,true);return false}
   if(!(data.done&&data.done.topic)){   // 열쇠가 없으면 완료만 예전 방식으로
-    if(a!=='done')return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
+    if(a!=='done')return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000,true);
     const q=new URLSearchParams({title:`done ${id}`,body:'웹페이지에서 보낸 완료 요청입니다.'});
     window.open(`https://github.com/${REPO}/issues/new?${q}`,'_blank','noopener');return}
   const k=a==='del'?'x|'+id:id+'|'+date,doing=rec?'반복 일정 전체를 지워요':ACT[a][0];
@@ -648,7 +658,7 @@ for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=
     if(queueAction('del',target.id,x?.date,data.rules.some(r=>r.id===target.id)||(!!x?.k&&x.k!=='o'))){$(inp).value='';entryMessage(form);entryControls(form);saveDrafts()}
     return;
   }
-  if(!(data.done&&data.done.topic))return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
+  if(!(data.done&&data.done.topic))return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000,true);
   if(memo&&!/#메모/.test(text))text='#메모 '+text;
   const sessionKey=key;form.dataset.sending='true';entryControls(form);
   const request={uncertain:false};form.entryRequest=request;
@@ -729,7 +739,7 @@ function openEdit(id,fresh=false){
   stashEdit();
   let current=edits.get(id);
   if(!current||(fresh&&!current.command)){
-    const x=editFind(id);if(!x||dn(x)||changing(id))return toast('이 일정은 현재 수정할 수 없어요.',5000);
+    const x=editFind(id);if(!x||dn(x)||changing(id))return toast('이 일정은 현재 수정할 수 없어요.',5000,true);
     const base=editBase(x);
     current={id,rev:x.edit.rev,spec:x.edit,busy:false,base,draft:{...base}};edits.set(id,current);
   }
@@ -942,11 +952,11 @@ $('pushx').onclick=()=>{try{localStorage.setItem('schedule-push-later','1')}catc
 $('pushb').onclick=async()=>{
   try{
     const reg=await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;
-    if(await Notification.requestPermission()!=='granted')return toast('알림이 허용되지 않았어요. 설정에서 이 앱의 알림을 켜 주세요',8000);
+    if(await Notification.requestPermission()!=='granted')return toast('알림이 허용되지 않았어요. 설정에서 이 앱의 알림을 켜 주세요',8000,true);
     const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ud(data.push.key)});
     await sendAct('sub',{text:JSON.stringify(sub)});
     $('pushc').hidden=true;toast('알림을 켰어요 · 1분 안에 시험 알림이 와요',6000);
-  }catch(e){toast('알림을 켜지 못했어요: '+esc(e.message||e),8000)}
+  }catch(e){toast('알림을 켜지 못했어요: '+esc(e.message||e),8000,true)}
 };
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});   // 앱 설치·알림용
 // ── 날씨(Open-Meteo, 무료·키 없음). 위치는 암호화된 데이터 안의 wx에서 온다 ──
@@ -1010,7 +1020,7 @@ $('cal').onclick=e=>{const b=e.target.closest('.c[data-d]');if(b){sel=b.dataset.
 $('prev').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m-2,1))).slice(0,7);calendar()};
 $('next').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m,1))).slice(0,7);calendar()};
 
-async function showApp(remembered){const sessionKey=key;await restoreDrafts();if(key!==sessionKey)return;$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();scheduleChangeCheck(3000);loadWeather();pushState().catch(()=>{});for(const k of queued.keys())scheduleAction(k);saveQueued();if(interrupted){interrupted=false;toast('전송 중 끊긴 변경이 있어요. 일정에 반영됐는지 확인해 주세요',8000)}}
+async function showApp(remembered){const sessionKey=key;await restoreDrafts();if(key!==sessionKey)return;$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();scheduleChangeCheck(3000);loadWeather();pushState().catch(()=>{});for(const k of queued.keys())scheduleAction(k);saveQueued();if(interrupted){interrupted=false;toast('전송 중 끊긴 변경이 있어요. 일정에 반영됐는지 확인해 주세요',8000,true)}}
 function showLock(msg){cancelVoice();voiceMessage();resetEditor();$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
 
 $('f').onsubmit=async e=>{
