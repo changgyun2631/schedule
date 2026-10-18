@@ -31,7 +31,7 @@ button:active:not(:disabled){opacity:.75}
 .app-head{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-bottom:24px}
 .brand{display:flex;align-items:center;gap:16px;white-space:nowrap}
 .brand img{display:block;width:140px;height:auto}
-.brand-product{font-size:13px;font-weight:600;color:var(--mut);border-left:1px solid var(--ln);padding-left:16px}
+.brand-product{font-size:13px;font-weight:600;color:var(--mut);border-left:1px solid var(--ln);padding-left:16px;cursor:pointer}
 .icon{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .icon-defs{position:absolute;width:0;height:0;overflow:hidden}
 .sub{color:var(--mut);font-size:14px}
@@ -136,7 +136,7 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .st b{font:600 30px/1.1 var(--font-display);font-variant-numeric:tabular-nums}
 .st span{font-size:12px;color:var(--hero-mut);white-space:nowrap}
 .st.bad b{color:var(--hero-red)}
-.wxb{flex:none;max-width:46%;display:flex;align-items:center;gap:8px;background:var(--hero-chip);border:1px solid transparent;border-radius:14px;padding:10px 12px;color:var(--hero-tx);font-size:14px;text-align:left;min-height:44px}
+.wxb{flex:none;max-width:46%;display:flex;align-items:center;gap:8px;background:#ffffff12;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid #ffffff1f;border-radius:14px;padding:10px 12px;color:var(--hero-tx);font-size:14px;text-align:left;min-height:44px}
 .wxb .ic{font-size:24px}.wx-chevron{font-size:12px;color:var(--hero-mut)}
 .wx-brief{display:flex;flex-direction:column;min-width:0;line-height:1.25}
 .wx-brief b{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -271,7 +271,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
 
 <section id="app" hidden>
   <header class="app-head">
-    <div class="brand"><img src="icons/cg-planer.svg" width="140" height="39" alt="CG PLANER"><span class="brand-product">일정관리</span></div>
+    <div class="brand"><img src="icons/cg-planer.svg" width="140" height="39" alt="CG PLANER"><span class="brand-product" id="copyUrl" role="button" tabindex="0" title="주소 복사">일정관리</span></div>
     <nav class="tabs" role="tablist" aria-label="화면">
       <button class="tab on" id="tabS" role="tab" aria-controls="vSch" aria-selected="true"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg><span>일정</span></button>
       <button class="tab" id="tabM" role="tab" aria-controls="vMemo" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-memo"/></svg><span>메모장</span><i id="mcnt"></i></button>
@@ -985,6 +985,18 @@ function renderWx(){
   const days=d.time.map((t,k)=>`<div class="dr"><b>${k===0?'오늘':k===1?'내일':WD[parse(t).getUTCDay()]}</b><span class="ic">${wxi(d.weather_code[k])[1]}</span><span>${wxi(d.weather_code[k])[2]}</span><span>${deg(d.temperature_2m_min[k])} / ${deg(d.temperature_2m_max[k])} · 강수 ${d.precipitation_probability_max[k]}%</span></div>`).join('');
   $('wxp').innerHTML=`<div class="now">지금 ${deg(c.temperature_2m)} · 체감 ${deg(c.apparent_temperature)} · ${tx}</div><div class="hrs">${hrs}</div><div class="dl">${days}</div>`;
 }
+// 상단 '일정관리' 글씨를 누르면 이 사이트 주소만 복사(이동 없음, 쿼리·해시는 뺌)
+async function copyUrl(){
+  const url=location.origin+location.pathname.replace(/index\.html$/,'');
+  try{await navigator.clipboard.writeText(url)}catch(_){
+    const ta=document.createElement('textarea');ta.value=url;ta.style.cssText='position:fixed;opacity:0';document.body.append(ta);ta.select();
+    const ok=document.execCommand&&document.execCommand('copy');ta.remove();
+    if(!ok)return toast('복사하지 못했어요. 주소창의 주소를 직접 복사해 주세요.',4000,true);
+  }
+  toast('사이트 주소를 복사했어요 · 붙여넣기로 열 수 있어요',3000);
+}
+$('copyUrl').onclick=copyUrl;
+$('copyUrl').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();copyUrl()}};
 $('wxb').onclick=()=>{if(!wxData)return loadWeather();const p=$('wxp');p.hidden=!p.hidden;$('wxb').setAttribute('aria-expanded',String(!p.hidden));renderWx()};
 // ── 주간: 월~일 한 주를 줄마다 ──
 function weekly(){
