@@ -153,6 +153,12 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .push .link{background:none;color:var(--mut);padding:0 4px}
 .pending{font-size:13px;color:var(--mut);margin:8px 0 0}
 .pending div{padding:2px 0}
+.action-status{position:fixed;z-index:21;left:16px;right:16px;bottom:24px;max-width:600px;max-height:35vh;overflow:auto;margin:0 auto;padding:8px 12px;background:var(--card);border:1px solid var(--ln);border-radius:10px;font-size:13px;color:var(--mut);box-shadow:0 4px 16px #0002}
+.action-status>div{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
+.action-status .undo{margin-left:0;flex:none;color:var(--acc)}
+html:has(#actions:not([hidden])){scroll-padding-bottom:calc(35vh + 100px + env(safe-area-inset-bottom))}
+main:has(#actions:not([hidden])){padding-bottom:calc(35vh + 100px + env(safe-area-inset-bottom))}
+body:has(#actions:not([hidden])) #toast{display:none}
 .mh{display:flex;align-items:baseline;justify-content:space-between;margin:28px 0 20px}
 #vMemo>.add,#vSearch>.add{margin-bottom:20px}
 #qf{grid-template-columns:1fr}
@@ -175,7 +181,7 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
   .btns{gap:8px;max-width:112px}
   .cal-h b{min-width:0;text-align:center;font-size:16px;line-height:1.5}
   .dr{grid-template-columns:2.2em 1.4em minmax(0,1fr);gap:4px}.dr>span:last-child{grid-column:2/-1;font-size:12px}
-  #toast{left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));bottom:calc(84px + env(safe-area-inset-bottom))}.lock{padding:24px;margin-top:8vh}.mh{margin-top:24px}
+  #toast,.action-status{left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));bottom:calc(84px + env(safe-area-inset-bottom))}.lock{padding:24px;margin-top:8vh}.mh{margin-top:24px}
 }
 @media(max-width:359px){#monthPanel{margin-left:-12px;margin-right:-12px;padding-left:0;padding-right:0}}
 @media(max-width:767px) and (max-height:700px) and (pointer:coarse){
@@ -222,6 +228,7 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
     </nav>
   </header>
   <div id="pushc" class="card push" hidden><span>일정 30분 전과 메모 시각에 알림을 받아 보세요.</span><button id="pushb">알림 켜기</button><button class="link" id="pushx">나중에</button></div>
+  <div id="actions" class="action-status" aria-label="처리 중인 변경" aria-live="polite" hidden></div>
   <div id="vSch" role="tabpanel" aria-labelledby="tabS">
   <div class="hero">
     <div class="date-heading">
@@ -362,45 +369,70 @@ $('chips').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;cat=b.data
 const REPO='changgyun2631/schedule',pk=x=>x.id+'|'+x.date;
 const pend=new Map();   // 키 -> 누른 시각. 새 데이터에서 끝난 것으로 확인되기 전까지 화면에서 끝난 것으로 보인다
 try{for(const [k,t] of Object.entries(JSON.parse(localStorage.getItem('schedule-pend')||'{}')))if(Date.now()-t<9e5)pend.set(k,t)}catch(_){}
-const savePend=()=>{try{localStorage.setItem('schedule-pend',JSON.stringify(Object.fromEntries(pend)))}catch(_){}};
+const queued=new Map();let interrupted=false;
+try{for(const [k,p] of Object.entries(JSON.parse(sessionStorage.getItem('schedule-actions')||'{}'))){
+  if(!p||!Number.isSafeInteger(p.id)||p.id<1||!['done','snooze','del'].includes(p.a)||!Number.isFinite(p.ts))continue;
+  if(p.state!=='queued'||Date.now()-p.ts>=9e5){interrupted=true;continue}
+  if(k!==(p.a==='del'?'x|'+p.id:p.id+'|'+p.date))continue;
+  queued.set(k,p);pend.set(k,p.ts);
+}}catch(_){}
+const saveQueued=()=>{try{sessionStorage.setItem('schedule-actions',JSON.stringify(Object.fromEntries(queued)))}catch(_){}};
+const savePend=()=>{try{localStorage.setItem('schedule-pend',JSON.stringify(Object.fromEntries([...pend].filter(([k])=>!queued.has(k)))))}catch(_){}};
 function dn(x){return !!x.done||pend.has(pk(x))}
 const gone=id=>pend.has('x|'+id);   // 지운 것(반영될 때까지 숨김)
 function prunePend(){   // 새 데이터에서 끝났거나(지운 건 사라졌거나) 15분이 지난 것은 마스크를 푼다
-  const by=new Map(data.items.map(x=>[pk(x),x])),ids=new Set([...data.items,...(data.memos||[])].map(x=>String(x.id)));
+  const by=new Map(data.items.map(x=>[pk(x),x])),ids=new Set([...data.items,...data.rules,...(data.memos||[])].map(x=>String(x.id)));
   for(const [k,t] of [...pend]){
+    if(queued.has(k))continue;
     const del=k.startsWith('x|');
     if(Date.now()-t>9e5||(del?!ids.has(k.slice(2)):(!by.has(k)||by.get(k).done)))pend.delete(k);
   }
   savePend();
 }
-let toastTimer;const timers=new Map();
+let toastTimer,leaving=false;const timers=new Map();
+addEventListener('pagehide',()=>leaving=true);
+addEventListener('pageshow',()=>leaving=false);
 function toast(html,ms){const t=$('toast');t.hidden=false;t.innerHTML=html;clearTimeout(toastTimer);if(ms)toastTimer=setTimeout(()=>t.hidden=true,ms)}
 const hex=u=>[...new Uint8Array(u)].map(b=>b.toString(16).padStart(2,'0')).join('');
 // 내 PC의 봇에게 보내는 요청: 서명 = HMAC(열쇠, 'a|id|text|ts'). a = done·snooze·del·add·sub
 async function sendAct(a,{id,text}={}){
-  const ts=Math.floor(Date.now()/1000),k=await crypto.subtle.importKey('raw',new TextEncoder().encode(data.done.key),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const {key:secret,topic}=data.done;
+  const ts=Math.floor(Date.now()/1000),k=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
   const sig=hex(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(`${a}|${id??''}|${text??''}|${ts}`)));
-  const r=await fetch('https://ntfy.sh/'+data.done.topic,{method:'POST',body:JSON.stringify({a,id,text,ts,sig})});
-  if(!r.ok)throw new Error(r.status);
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+  try{const r=await fetch('https://ntfy.sh/'+topic,{method:'POST',body:JSON.stringify({a,id,text,ts,sig}),signal:controller.signal});if(!r.ok)throw new Error(r.status)}
+  finally{clearTimeout(timeout)}
 }
 const ACT={done:['완료 처리해요','완료를','완료'],snooze:['내일로 미뤄요','미루기를','미루기'],del:['지워요','삭제를','삭제']};
+function actionStatus(){
+  $('actions').hidden=!queued.size;
+  $('actions').innerHTML=[...queued].map(([k,p])=>`<div><span>#${p.id} ${ACT[p.a][2]} ${p.state==='queued'?'대기 중':'보내는 중'}</span>${p.state==='queued'?`<button class="undo" data-k="${esc(k)}" aria-label="#${p.id} ${ACT[p.a][2]} 되돌리기">되돌리기</button>`:''}</div>`).join('');
+}
+function scheduleAction(k){
+  const p=queued.get(k);if(!p||p.state!=='queued'||timers.has(k))return;
+  timers.set(k,setTimeout(async()=>{
+    timers.delete(k);if(!key||queued.get(k)!==p)return;
+    const [,sent,cmd]=ACT[p.a];
+    p.state='sending';saveQueued();actionStatus();
+    try{await sendAct(p.a,{id:p.id});if(queued.get(k)!==p)return;queued.delete(k);saveQueued();savePend();render();toast(`#${p.id} ${sent} 보냈어요 · 곧 반영돼요`,4000)}
+    catch(_){if(leaving||queued.get(k)!==p)return;queued.delete(k);pend.delete(k);saveQueued();savePend();render();toast(`보내지 못했어요. 텔레그램에서 "${cmd} ${p.id}"로 해 주세요`,8000)}
+  },Math.max(0,p.ts+5000-Date.now())));
+}
 document.addEventListener('click',e=>{
   const u=e.target.closest('.undo');
-  if(u){const k=u.dataset.k;clearTimeout(timers.get(k));timers.delete(k);pend.delete(k);savePend();$('toast').hidden=true;render();return}
+  if(u){const k=u.dataset.k;if(queued.get(k)?.state!=='queued')return;clearTimeout(timers.get(k));timers.delete(k);queued.delete(k);pend.delete(k);saveQueued();savePend();$('toast').hidden=true;render();return}
   const b=e.target.closest('.dn,.sn,.rm');if(!b)return;
   const id=+b.dataset.id,a=b.classList.contains('dn')?'done':b.classList.contains('sn')?'snooze':'del';
   if(!(data.done&&data.done.topic)){   // 열쇠가 없으면 완료만 예전 방식으로
     if(a!=='done')return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
     const q=new URLSearchParams({title:`done ${id}`,body:'웹페이지에서 보낸 완료 요청입니다.'});
     window.open(`https://github.com/${REPO}/issues/new?${q}`,'_blank','noopener');return}
-  const k=a==='del'?'x|'+id:id+'|'+b.dataset.d,[,sent,cmd]=ACT[a],doing=b.dataset.rec?'반복 일정 전체를 지워요':ACT[a][0];
-  pend.set(k,Date.now());savePend();render();
+  const k=a==='del'?'x|'+id:id+'|'+b.dataset.d,doing=b.dataset.rec?'반복 일정 전체를 지워요':ACT[a][0];
+  if(queued.has(k))return;
+  const ts=Date.now();queued.set(k,{a,id,date:b.dataset.d,ts,state:'queued'});
+  pend.set(k,ts);saveQueued();savePend();render();
   toast(`#${id} ${doing} <button class="undo" data-k="${k}">되돌리기</button>`);
-  timers.set(k,setTimeout(async()=>{
-    timers.delete(k);
-    try{await sendAct(a,{id});toast(`#${id} ${sent} 보냈어요 · 곧 반영돼요`,4000)}
-    catch(_){pend.delete(k);savePend();render();toast(`보내지 못했어요. 텔레그램에서 "${cmd} ${id}"로 해 주세요`,8000)}
-  },5000));
+  scheduleAction(k);
 });
 // 추가 칸: 글을 그대로 봇에 보낸다(텔레그램에 보내는 것과 같은 형식). 반영될 때까지 '보냄'으로 보여 준다.
 const adds=[];
@@ -411,19 +443,20 @@ function pendAdds(){
   for(const [id,memo] of [['spend',0],['mpend',1]]){const xs=adds.filter(x=>x.memo===memo);$(id).hidden=!xs.length;$(id).innerHTML=xs.map(x=>`<div>⏳ 보냄 · 곧 반영돼요: ${esc(x.text)}</div>`).join('')}
 }
 for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=async e=>{
-  e.preventDefault();let text=$(inp).value.trim();if(!text)return;
+  e.preventDefault();const input=$(inp).value;let text=input.trim();if(!text)return;
   if(!(data.done&&data.done.topic))return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
   if(memo&&!/#메모/.test(text))text='#메모 '+text;
-  const btn=$(f).querySelector('button');btn.disabled=true;
-  try{await sendAct('add',{text});$(inp).value='';adds.push({text,memo,ts:Date.now()});pendAdds();toast('보냈어요 · 1분쯤 뒤 반영돼요(결과는 텔레그램에도 와요)',5000);setTimeout(reload,7e4)}
-  catch(_){toast('보내지 못했어요. 텔레그램으로 보내 주세요',8000)}
-  finally{btn.disabled=false}
+  const btn=$(f).querySelector('button');if(btn.disabled)return;const sessionKey=key;btn.disabled=true;btn.textContent='보내는 중';
+  try{await sendAct('add',{text});if(key!==sessionKey)return;if($(inp).value===input)$(inp).value='';adds.push({text,memo,ts:Date.now()});pendAdds();toast('보냈어요 · 1분쯤 뒤 반영돼요(결과는 텔레그램에도 와요)',5000);setTimeout(reload,7e4)}
+  catch(_){if(key===sessionKey)toast('보내지 못했어요. 입력한 내용은 남겨 두었어요',8000)}
+  finally{btn.disabled=false;btn.textContent='추가'}
 };
 function list(el,items,emptyMsg,opt){el.innerHTML=items.length?items.map(x=>row(x,opt)).join(''):`<li class="empty">${emptyMsg}</li>`}
 const on=d=>data.items.filter(x=>x.date===d&&vis(x)&&!gone(x.id)).sort((a,b)=>(+dn(a))-(+dn(b))||(a.t||'99:99').localeCompare(b.t||'99:99')||a.id-b.id);   // 끝낸 건 아래, 시각 있는 것 먼저
 
 function render(){
   prunePend();
+  actionStatus();
   const d=parse(T);
   $('today').dateTime=T;
   $('dateDay').textContent=`${d.getUTCMonth()+1}월 ${d.getUTCDate()}일`;
@@ -594,7 +627,7 @@ $('cal').onclick=e=>{const b=e.target.closest('.c[data-d]');if(b){sel=b.dataset.
 $('prev').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m-2,1))).slice(0,7);calendar()};
 $('next').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m,1))).slice(0,7);calendar()};
 
-function showApp(remembered){$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();loadWeather();pushState().catch(()=>{})}
+function showApp(remembered){$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();loadWeather();pushState().catch(()=>{});for(const k of queued.keys())scheduleAction(k);saveQueued();if(interrupted){interrupted=false;toast('전송 중 끊긴 변경이 있어요. 일정에 반영됐는지 확인해 주세요',8000)}}
 function showLock(msg){$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
 
 $('f').onsubmit=async e=>{
@@ -607,7 +640,7 @@ $('f').onsubmit=async e=>{
     showApp($('rem').checked);
   }catch(err){showLock(err.message)}
 };
-$('forget').onclick=()=>{localStorage.removeItem(KEY);key=data=null;showLock()};
+$('forget').onclick=()=>{localStorage.removeItem(KEY);for(const timer of timers.values())clearTimeout(timer);timers.clear();for(const k of queued.keys())pend.delete(k);queued.clear();saveQueued();savePend();clearTimeout(toastTimer);$('toast').hidden=true;key=data=null;showLock()};
 
 async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용을 받는다
   if(!key)return;

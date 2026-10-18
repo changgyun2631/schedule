@@ -66,11 +66,11 @@ async function open(t, options = {}, weather = {}) {
       if (!['index.html', 'sw.js', 'manifest.webmanifest'].includes(file) && !/^icons\/[\w.-]+$/.test(file)) return route.fulfill({status: 404});
       return route.fulfill({path: join(root, file)});
     }
-    requests.push(route.request());
     if (url.hostname === 'api.open-meteo.com') return route.fulfill({status: weather.status || 200, contentType: 'application/json', body: JSON.stringify(weatherFixture)});
     return route.fulfill({status: 200, body: '{}'});
   });
   const page = await context.newPage();
+  page.on('request', request => {if(new URL(request.url()).origin !== base)requests.push(request)});
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(base);
   await page.locator('#pw').fill('preview');
@@ -145,7 +145,7 @@ test('completion can be undone and adding keeps the signed request flow', async 
   const {page, requests} = await open(t);
   await page.locator('#tl .dn[data-id="1"]').click();
   assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 0);
-  await page.locator('#toast .undo').click();
+  await page.locator('#actions .undo').click();
   assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1);
   await page.locator('#sadd').fill('내일 자료 검토 #업무');
   await page.locator('#saddf button').click();
@@ -156,6 +156,176 @@ test('completion can be undone and adding keeps the signed request flow', async 
   assert.equal(body.a, 'add');
   assert.equal(body.text, '내일 자료 검토 #업무');
   assert.match(body.sig, /^[a-f0-9]{64}$/);
+});
+
+test('new text entered while an addition is sending is kept for the next submission', async t => {
+  for (const [tab, input, form] of [['tabS', 'sadd', 'saddf'], ['tabM', 'madd', 'maddf']]) {
+    const {page} = await open(t);
+    await page.locator('#' + tab).click();
+    await page.locator('#' + input).waitFor({state: 'visible'});
+    let release;
+    const held = new Promise(resolve => {release = resolve});
+    t.after(() => release());
+    await page.context().route('https://ntfy.sh/**', async route => {
+      await held;
+      await route.fulfill({status: 200, body: '{}'});
+    });
+    await page.locator('#' + input).fill('첫 번째 내용');
+    await page.locator('#' + form + ' button').click();
+    await page.locator('#' + input).fill('다음에 보낼 내용');
+    release();
+    await page.waitForFunction(id => !document.querySelector('#' + id + ' button').disabled, form);
+    assert.equal(await page.locator('#' + input).inputValue(), '다음에 보낼 내용');
+  }
+});
+
+test('completion waiting for undo survives reload and is sent exactly once', async t => {
+  const {page, requests} = await open(t);
+  await page.clock.install();
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'), null, {timeout: 1000});
+  const actions = requests.filter(r => r.url().includes('ntfy.sh')).map(r => r.postDataJSON());
+  assert.equal(actions.length, 1, 'one pending completion is delivered after reload');
+  assert.equal(actions[0].a, 'done');
+  assert.equal(actions[0].id, 1);
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  await page.clock.runFor(5500);
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 1, 'accepted requests are not resent');
+});
+
+test('each pending action can be undone even after another action is queued', async t => {
+  const {page, requests} = await open(t);
+  await page.clock.install();
+  const headerY = await page.locator('.hero').evaluate(el => el.getBoundingClientRect().top + scrollY);
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.locator('#tl .dn[data-id="2"]').click();
+  assert.equal(await page.locator('.hero').evaluate(el => el.getBoundingClientRect().top + scrollY), headerY, 'action feedback does not shift the page header');
+  const firstUndo = page.locator('#actions .undo[data-k="1|' + today + '"]');
+  assert.equal(await firstUndo.count(), 1, 'first action keeps its own undo control');
+  if(process.env.UI_SCREENSHOTS) await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'pending-actions.png')});
+  await firstUndo.click();
+  assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1);
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'), null, {timeout: 1000});
+  const actions = requests.filter(r => r.url().includes('ntfy.sh')).map(r => r.postDataJSON());
+  assert.deepEqual(actions.map(x => x.id), [2]);
+});
+
+test('forgetting the device cancels actions that have not been sent', async t => {
+  const {page, requests} = await open(t);
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#rem').check();
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  await page.clock.install();
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.locator('#forget').focus();
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(5500);
+  assert.equal(await page.locator('#lock').isVisible(), true);
+  assert.equal(await page.locator('#toast').isVisible(), false);
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 0);
+});
+
+test('a stalled addition releases the form and keeps the unsent text', async t => {
+  const {page} = await open(t);
+  await page.clock.install();
+  let release;
+  const held = new Promise(resolve => {release = resolve});
+  t.after(() => release());
+  await page.context().route('https://ntfy.sh/**', async route => {
+    await held;
+    await route.fulfill({status: 200, body: '{}'});
+  });
+  await page.locator('#sadd').fill('끊겨도 남아 있어야 할 내용');
+  const sent = page.waitForRequest('https://ntfy.sh/**');
+  await page.locator('#saddf button').click();
+  await sent;
+  await page.clock.runFor(16000);
+  assert.equal(await page.locator('#saddf button').isDisabled(), false, 'stalled requests do not leave the form locked');
+  assert.equal(await page.locator('#sadd').inputValue(), '끊겨도 남아 있어야 할 내용');
+  assert.match(await page.locator('#toast').innerText(), /보내지 못/);
+});
+
+test('failed action delivery restores the task and clears the pending undo state', async t => {
+  const {page} = await open(t);
+  await page.clock.install();
+  await page.context().route('https://ntfy.sh/**', route => route.fulfill({status: 503, body: ''}));
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보내지 못'), null, {timeout: 1500});
+  assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1);
+  assert.equal(await page.locator('#actions').isVisible(), false);
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1);
+});
+
+test('snoozing and memo deletion keep their action type across reload', async t => {
+  for (const [selector, a, id] of [['#tl .sn[data-id="1"]', 'snooze', 1], ['#ml2 .rm[data-id="8"]', 'del', 8]]) {
+    const {page, requests} = await open(t);
+    await page.clock.install();
+    if(a === 'del') {
+      await page.locator('#tabM').click();
+      await page.locator('#ml2').waitFor({state: 'visible'});
+    }
+    await page.locator(selector).click();
+    await page.reload();
+    await page.locator('#pw').fill('preview');
+    await page.locator('#go').click();
+    await page.locator('#app').waitFor({state: 'visible'});
+    await page.clock.runFor(5500);
+    await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'), null, {timeout: 1500});
+    const actions = requests.filter(r => r.url().includes('ntfy.sh')).map(r => r.postDataJSON());
+    assert.deepEqual(actions.map(x => [x.a, x.id]), [[a, id]]);
+  }
+});
+
+test('a deleted recurring rule stays hidden until fresh data confirms deletion', async t => {
+  const {page} = await open(t);
+  await page.clock.install();
+  await page.locator('#tabQ').click();
+  await page.locator('#qin').fill('회고');
+  await page.locator('#ql2 .rm[data-id="7"]').click();
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'), null, {timeout: 1500});
+  assert.equal(await page.locator('#ql2 .row').count(), 0, 'a rule without near-term occurrences must stay deleted');
+});
+
+test('closing a page during delivery never automatically repeats the request', async t => {
+  const {page, requests} = await open(t);
+  await page.clock.install();
+  let release;
+  const held = new Promise(resolve => {release = resolve});
+  t.after(() => release());
+  await page.context().route('https://ntfy.sh/**', async route => {
+    await held;
+    await route.fulfill({status: 200, body: '{}'});
+  });
+  const sent = page.waitForRequest('https://ntfy.sh/**');
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.clock.runFor(5500);
+  await sent;
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  release();
+  await page.clock.runFor(5500);
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 1);
+  assert.match(await page.locator('#toast').innerText(), /확인/);
+  assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1, 'unconfirmed actions are not shown as completed');
 });
 
 test('phone, desktop and dark mode fit the viewport with usable controls', async t => {
