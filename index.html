@@ -192,7 +192,8 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .action-status{position:fixed;z-index:21;left:16px;right:16px;bottom:24px;max-width:600px;max-height:35vh;overflow:auto;margin:0 auto;padding:8px 12px;background:var(--card);border:1px solid var(--ln);border-radius:10px;font-size:13px;color:var(--mut);box-shadow:0 4px 16px #0002}
 .action-status>div{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
 .action-status .undo{margin-left:0;flex:none;color:var(--acc)}
-.edit-resume{flex:none;min-height:44px;border:1px solid var(--ln);border-radius:8px;background:transparent;color:var(--acc);padding:0 12px;font-size:13px}
+.edit-resume,.check-action{flex:none;min-height:44px;border:1px solid var(--ln);border-radius:8px;background:transparent;color:var(--acc);padding:0 12px;font-size:13px}
+.check-action[aria-disabled=true]{opacity:.6;cursor:progress}
 html:has(#actions:not([hidden])){scroll-padding-bottom:calc(35vh + 100px + env(safe-area-inset-bottom))}
 main:has(#actions:not([hidden])){padding-bottom:calc(35vh + 100px + env(safe-area-inset-bottom))}
 body:has(#actions:not([hidden])) #toast{display:none}
@@ -455,23 +456,28 @@ try{for(const [k,t] of Object.entries(JSON.parse(localStorage.getItem('schedule-
 const queued=new Map();let interrupted=false;
 try{for(const [k,p] of Object.entries(JSON.parse(sessionStorage.getItem('schedule-actions')||'{}'))){
   if(!p||!Number.isSafeInteger(p.id)||p.id<1||!['done','snooze','del'].includes(p.a)||!Number.isFinite(p.ts))continue;
-  if(p.state!=='queued'||Date.now()-p.ts>=9e5){interrupted=true;continue}
+  if(!['queued','checking'].includes(p.state)||Date.now()-p.ts>=9e5||(p.state==='checking'&&!Number.isFinite(p.sentAt))){interrupted=true;continue}
   if(k!==(p.a==='del'?'x|'+p.id:p.id+'|'+p.date))continue;
   queued.set(k,p);pend.set(k,p.ts);
 }}catch(_){}
 const saveQueued=()=>{try{sessionStorage.setItem('schedule-actions',JSON.stringify(Object.fromEntries(queued)))}catch(_){}};
-const savePend=()=>{try{localStorage.setItem('schedule-pend',JSON.stringify(Object.fromEntries([...pend].filter(([k])=>!queued.has(k)))))}catch(_){}};
+const savePend=()=>{try{localStorage.setItem('schedule-pend',JSON.stringify(Object.fromEntries([...pend].filter(([k])=>!queued.has(k)||queued.get(k).state==='checking'))))}catch(_){}};
 function dn(x){return !!x.done||pend.has(pk(x))}
 const gone=id=>pend.has('x|'+id);   // 지운 것(반영될 때까지 숨김)
 const changing=id=>[...pend.keys()].some(k=>k==='x|'+id||k.startsWith(id+'|'));
 function prunePend(){   // 새 데이터에서 끝났거나(지운 건 사라졌거나) 15분이 지난 것은 마스크를 푼다
   const by=new Map(data.items.map(x=>[pk(x),x])),ids=new Set([...data.items,...data.rules,...(data.memos||[])].map(x=>String(x.id)));
+  let changed=false,expired=false;
   for(const [k,t] of [...pend]){
-    if(queued.has(k))continue;
+    if(queued.has(k)&&queued.get(k).state!=='checking')continue;
     const del=k.startsWith('x|');
-    if(Date.now()-t>9e5||(del?!ids.has(k.slice(2)):(!by.has(k)||by.get(k).done)))pend.delete(k);
+    const confirmed=del?!ids.has(k.slice(2)):(!by.has(k)||by.get(k).done);
+    if(Date.now()-t>=9e5||confirmed){expired||=!confirmed;pend.delete(k);queued.delete(k);changed=true}
   }
+  if(changed)saveQueued();
   savePend();
+  if(expired)toast('반영을 확인하지 못한 변경이 있어요. 현재 일정 상태를 확인해 주세요.',8000);
+  return changed;
 }
 let toastTimer,leaving=false;const timers=new Map();
 addEventListener('pagehide',()=>leaving=true);
@@ -489,9 +495,13 @@ async function sendAct(a,{id,text}={}){
 }
 const ACT={done:['완료 처리해요','완료를','완료'],snooze:['내일로 미뤄요','미루기를','미루기'],del:['지워요','삭제를','삭제']};
 function actionStatus(){
+  const focusKey=document.activeElement?.classList.contains('check-action')?document.activeElement.dataset.k:null;
   const edit=[...edits.values()].filter(x=>editDirty(x)||(x.requestAt&&(x.busy||x.command||x.error))).map(x=>`<div><span>#${x.id} 수정 ${x.busy?'반영 확인 중':x.requestAt?'확인 필요':'작성 중'}</span><button class="edit-resume" data-id="${x.id}" aria-label="#${x.id} 수정 상태 열기">확인</button></div>`).join('');
-  $('actions').hidden=!queued.size&&!edit;
-  $('actions').innerHTML=[...queued].map(([k,p])=>`<div><span>#${p.id} ${ACT[p.a][2]} ${p.state==='queued'?'대기 중':'보내는 중'}</span>${p.state==='queued'?`<button class="undo" data-k="${esc(k)}" aria-label="#${p.id} ${ACT[p.a][2]} 되돌리기">되돌리기</button>`:''}</div>`).join('')+edit;
+  const checking=(k,id,label,ts)=>`<div><span>#${esc(id)} ${label} ${Date.now()-ts<120000?'반영 확인 중':'반영 확인 지연'}</span><button class="check-action" data-k="${esc(k)}" aria-label="#${esc(id)} 반영 다시 확인">다시 확인</button></div>`;
+  const waiting=[...pend].filter(([k])=>!queued.has(k)).map(([k,ts])=>checking(k,k.startsWith('x|')?k.slice(2):k.split('|')[0],'변경',ts)).join('');
+  const actions=[...queued].map(([k,p])=>p.state==='checking'?checking(k,p.id,ACT[p.a][2],p.sentAt):`<div><span>#${p.id} ${ACT[p.a][2]} ${p.state==='queued'?'대기 중':'보내는 중'}</span>${p.state==='queued'?`<button class="undo" data-k="${esc(k)}" aria-label="#${p.id} ${ACT[p.a][2]} 되돌리기">되돌리기</button>`:''}</div>`).join('')+waiting+edit;
+  $('actions').hidden=!actions;
+  if($('actions').innerHTML!==actions){$('actions').innerHTML=actions;if(focusKey)([...$('actions').querySelectorAll('.check-action')].find(b=>b.dataset.k===focusKey)||document.querySelector('.tab.on'))?.focus({preventScroll:true})}
 }
 function scheduleAction(k){
   const p=queued.get(k);if(!p||p.state!=='queued'||timers.has(k))return;
@@ -499,7 +509,7 @@ function scheduleAction(k){
     timers.delete(k);if(!key||queued.get(k)!==p)return;
     const [,sent,cmd]=ACT[p.a];
     p.state='sending';saveQueued();actionStatus();
-    try{await sendAct(p.a,{id:p.id,...(p.a==='done'&&data.done_dates===1?{text:p.date}:{})});if(queued.get(k)!==p)return;queued.delete(k);saveQueued();savePend();render();toast(`#${p.id} ${sent} 보냈어요 · 곧 반영돼요`,4000)}
+    try{await sendAct(p.a,{id:p.id,...(p.a==='done'&&data.done_dates===1?{text:p.date}:{})});if(queued.get(k)!==p)return;p.state='checking';p.sentAt=Date.now();saveQueued();savePend();render();scheduleChangeCheck(3000);toast(`#${p.id} ${sent} 보냈어요 · 곧 반영돼요`,4000)}
     catch(_){if(leaving||queued.get(k)!==p)return;queued.delete(k);pend.delete(k);saveQueued();savePend();render();toast(`보내지 못했어요. 텔레그램에서 "${cmd} ${p.id}"로 해 주세요`,8000)}
   },Math.max(0,p.ts+5000-Date.now())));
 }
@@ -519,6 +529,8 @@ function queueAction(a,id,date,rec=false){
   return true;
 }
 document.addEventListener('click',e=>{
+  const check=e.target.closest('.check-action');
+  if(check){if(check.getAttribute('aria-disabled')==='true')return;check.setAttribute('aria-disabled','true');reload().finally(()=>{check.removeAttribute('aria-disabled');scheduleChangeCheck()});return}
   const u=e.target.closest('.undo');
   if(u){const k=u.dataset.k;if(queued.get(k)?.state!=='queued')return;clearTimeout(timers.get(k));timers.delete(k);queued.delete(k);pend.delete(k);saveQueued();savePend();$('toast').hidden=true;render();return}
   const b=e.target.closest('.dn,.sn,.rm');if(!b)return;
@@ -645,7 +657,7 @@ for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=
   finally{if(form.entryRequest===request){if(!request.uncertain)delete form.entryRequest;form.dataset.sending='false';entryControls(form);saveDrafts()}}
 };
 const edits=new Map(),EDIT_FIELDS=[['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd']];
-let editing=null,editTimer;
+let editing=null,changeTimer;
 const editFind=id=>[...data.items,...(data.memos||[]),...data.rules].find(x=>x.id===id&&x.edit);
 const editBase=x=>({text:x.text,date:x.edit.date||'',time:x.t||'',cat:catOf(x),day:x.edit.day,wd:x.edit.wd});
 const editDirty=x=>EDIT_FIELDS.some(([,field])=>String(x.draft[field]??'')!==String(x.base[field]??''));
@@ -772,22 +784,26 @@ $('editForm').onsubmit=async e=>{
     await sendAct('edit',{id:current.id,text:JSON.stringify(current.command)});
     if(key!==sessionKey||edits.get(current.id)!==current)return;
     current.sent=true;editMessage('수정 요청을 보냈어요. 반영 결과를 확인하고 있어요.',false,current);
-    scheduleEditCheck(3000);
+    scheduleChangeCheck(3000);
     saveDrafts();
   }catch(_){if(key===sessionKey&&edits.get(current.id)===current){editBusy(false,current);editMessage('전송을 확인하지 못했어요. 입력은 남아 있으니 다시 시도해 주세요.',true,current);saveDrafts()}}
 };
-function scheduleEditCheck(delay=5000){
-  clearTimeout(editTimer);
-  if([...edits.values()].some(x=>x.busy&&x.sent))editTimer=setTimeout(checkEdit,delay);
+function scheduleChangeCheck(delay){
+  clearTimeout(changeTimer);if(!key)return;
+  const edit=[...edits.values()].some(x=>x.busy&&x.sent),waiting=[...pend].filter(([k])=>!queued.has(k)||queued.get(k).state==='checking');
+  if(edit||waiting.length)changeTimer=setTimeout(checkChanges,delay??(edit||waiting.some(([k,t])=>Date.now()-(queued.get(k)?.sentAt??t)<120000)?5000:30000));
 }
-async function checkEdit(){
+async function checkChanges(){
   const sessionKey=key;if(!sessionKey)return;
   await reload();if(key!==sessionKey)return;
+  if(prunePend())render();else actionStatus();
+  let changed=false;
   for(const current of edits.values())if(current.busy&&current.sent&&Date.now()-current.requestAt>=120000){
+    changed=true;
     editBusy(false,current);editMessage('아직 반영을 확인하지 못했어요. PC 봇이 켜져 있는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true,current);
   }
-  scheduleEditCheck();
-  saveDrafts();
+  scheduleChangeCheck();
+  if(changed)saveDrafts();
 }
 function editResult(){
   stashEdit();
@@ -808,11 +824,11 @@ function editResult(){
     else if(result.ok){edits.delete(current.id);if(editing===current){editing=null;$('editor').close()}toast(`#${current.id} 수정했어요.`,4000)}
     else{current.conflict=result.code==='conflict';editMessage(result.message||'수정되지 않았어요. 입력은 남아 있어요.',true,current)}
   }
-  if(![...edits.values()].some(x=>x.busy&&x.sent))clearTimeout(editTimer);
+  scheduleChangeCheck();
   actionStatus();
   if(changed)saveDrafts();
 }
-function resetEditor(){clearTimeout(editTimer);edits.clear();editing=null;$('editForm').reset();$('editor').close();actionStatus()}
+function resetEditor(){clearTimeout(changeTimer);edits.clear();editing=null;$('editForm').reset();$('editor').close();actionStatus()}
 function list(el,items,emptyMsg,opt){el.innerHTML=items.length?items.map(x=>row(x,opt)).join(''):`<li class="empty">${emptyMsg}</li>`}
 const on=d=>data.items.filter(x=>x.date===d&&vis(x)&&!gone(x.id)).sort((a,b)=>(+dn(a))-(+dn(b))||(a.t||'99:99').localeCompare(b.t||'99:99')||a.id-b.id);   // 끝낸 건 아래, 시각 있는 것 먼저
 
@@ -994,7 +1010,7 @@ $('cal').onclick=e=>{const b=e.target.closest('.c[data-d]');if(b){sel=b.dataset.
 $('prev').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m-2,1))).slice(0,7);calendar()};
 $('next').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m,1))).slice(0,7);calendar()};
 
-async function showApp(remembered){const sessionKey=key;await restoreDrafts();if(key!==sessionKey)return;$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();scheduleEditCheck(3000);loadWeather();pushState().catch(()=>{});for(const k of queued.keys())scheduleAction(k);saveQueued();if(interrupted){interrupted=false;toast('전송 중 끊긴 변경이 있어요. 일정에 반영됐는지 확인해 주세요',8000)}}
+async function showApp(remembered){const sessionKey=key;await restoreDrafts();if(key!==sessionKey)return;$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();scheduleChangeCheck(3000);loadWeather();pushState().catch(()=>{});for(const k of queued.keys())scheduleAction(k);saveQueued();if(interrupted){interrupted=false;toast('전송 중 끊긴 변경이 있어요. 일정에 반영됐는지 확인해 주세요',8000)}}
 function showLock(msg){cancelVoice();voiceMessage();resetEditor();$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
 
 $('f').onsubmit=async e=>{

@@ -1350,6 +1350,130 @@ test('completion waiting for undo survives reload and is sent exactly once', asy
   assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 1, 'accepted requests are not resent');
 });
 
+test('accepted completion, snooze and deletion stay visible until a fresh snapshot confirms them', async t => {
+  for(const [action, selector] of [['done', '#tl .dn[data-id="1"]'], ['snooze', '#tl .sn[data-id="1"]'], ['del', '#ml2 .rm[data-id="8"]']]) {
+    const {page, requests} = await open(t);
+    if(action === 'del') await page.locator('#tabM').click();
+    await page.clock.install();
+    await page.locator(selector).click();
+    await page.clock.runFor(5500);
+    await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'));
+    assert.equal(await page.locator('#actions').isVisible(), true, 'transport acceptance is not yet a saved result');
+    assert.match(await page.locator('#actions').innerText(), /반영 확인 중/);
+    assert.equal(await page.locator('#actions .undo').count(), 0, 'a transmitted action cannot be undone locally');
+    if(process.env.UI_SCREENSHOTS && action === 'done') await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'pending-confirmation.png')});
+    let checks = 0, blob = await encryptFixture(fixture);
+    await page.context().route('**/data.enc.json?*', route => {checks++; return route.fulfill({contentType: 'application/json', body: blob})});
+    await page.clock.runFor(3500);
+    await page.waitForFunction(() => refreshApplied > 0);
+    assert.match(await page.locator('#actions').innerText(), /반영 확인 중/, 'an unchanged snapshot does not confirm the action');
+    const updated = structuredClone(fixture);
+    if(action === 'done') updated.items[0].done = true;
+    if(action === 'snooze') updated.items[0].date = day(1);
+    if(action === 'del') updated.memos = [];
+    blob = await encryptFixture(updated);
+    await page.clock.runFor(5500);
+    await page.locator('#actions').waitFor({state: 'hidden'});
+    const count = checks;
+    await page.clock.runFor(12000);
+    assert.equal(checks, count, 'confirmation stops the extra polling');
+    assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 1, 'confirmation checks never repeat the action');
+  }
+});
+
+test('accepted actions resume result checks after reload and offer a read-only manual check', async t => {
+  const {page, requests} = await open(t);
+  await page.clock.install();
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'));
+  const other = await page.context().newPage();
+  const otherPosts = [];
+  other.on('request', r => {if(r.url().includes('ntfy.sh')) otherPosts.push(r)});
+  await other.goto(base);
+  await other.locator('#pw').fill('preview');
+  await other.locator('#go').click();
+  await other.locator('#app').waitFor({state: 'visible'});
+  assert.match(await other.locator('#actions').innerText(), /변경 반영 확인 중/, 'a new page also explains the locally pending state');
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  assert.match(await page.locator('#actions').innerText(), /반영 확인 중/);
+  await page.clock.runFor(5500);
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 1);
+  const check = page.getByRole('button', {name: '#1 반영 다시 확인', exact: true});
+  await check.focus();
+  const before = await page.evaluate(() => refreshApplied);
+  await check.press('Enter');
+  await page.waitForFunction(previous => refreshApplied > previous, before);
+  assert.equal(await check.evaluate(el => el === document.activeElement), true, 'an unchanged result check preserves keyboard focus');
+  const updated = structuredClone(fixture);
+  updated.items = updated.items.filter(x => x.id !== 1);
+  const blob = await encryptFixture(updated);
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.getByRole('button', {name: '#1 반영 다시 확인', exact: true}).click();
+  await page.locator('#actions').waitFor({state: 'hidden'});
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 1);
+  assert.equal(await page.evaluate(() => Object.keys(JSON.parse(sessionStorage.getItem('schedule-actions'))).length), 0);
+  await other.getByRole('button', {name: '#1 반영 다시 확인', exact: true}).click();
+  await other.locator('#actions').waitFor({state: 'hidden'});
+  assert.equal(otherPosts.length, 0);
+});
+
+test('finishing an edit does not cancel a different completion result check', async t => {
+  const {page, requests} = await open(t);
+  await page.clock.install();
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'));
+  await page.locator('#tl .ed[data-id="2"]').click();
+  await page.locator('#editText').fill('완료와 따로 확인할 수정');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  const command = JSON.parse(requests.find(r => r.url().includes('ntfy.sh') && r.postDataJSON().a === 'edit').postDataJSON().text);
+  const updated = structuredClone(fixture);
+  updated.items[1].text = command.changes.text;
+  updated.edit_results = [{rid: command.rid, id: 2, ok: true}];
+  let blob = await encryptFixture(updated);
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.clock.runFor(3500);
+  await page.locator('#editor').waitFor({state: 'hidden'});
+  assert.match(await page.locator('#actions').innerText(), /#1 완료 반영 확인 중/);
+  updated.items[0].done = true;
+  blob = await encryptFixture(updated);
+  await page.clock.runFor(5500);
+  await page.locator('#actions').waitFor({state: 'hidden'});
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 2);
+});
+
+test('delayed confirmation backs off and eventually releases an unconfirmed optimistic state', async t => {
+  const {page, requests} = await open(t, {viewport: {width: 320, height: 568}});
+  await page.clock.install();
+  await page.locator('#tl .dn[data-id="1"]').click();
+  await page.clock.runFor(5500);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('보냈어요'));
+  let reads = 0;
+  await page.context().route('**/data.enc.json?*', route => {reads++; return route.fulfill({status: 503, body: ''})});
+  await page.clock.fastForward(121000);
+  await page.waitForFunction(() => document.getElementById('actions').textContent.includes('확인 지연'));
+  const check = page.getByRole('button', {name: '#1 반영 다시 확인', exact: true});
+  const box = await check.boundingBox();
+  assert.ok(box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= 320, 'the delayed status keeps its check button usable on phones');
+  if(process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'delayed-confirmation.png')});
+  const previous = reads;
+  await page.clock.runFor(15000);
+  assert.equal(reads, previous, 'a delayed confirmation no longer polls every few seconds');
+  const polled = page.waitForResponse('**/data.enc.json?*');
+  await page.clock.runFor(16000);
+  await polled;
+  assert.ok(reads > previous);
+  await page.clock.fastForward(900000);
+  await page.waitForFunction(() => document.getElementById('actions').hidden && document.querySelector('#tl .dn[data-id="1"]'));
+  assert.match(await page.locator('#toast').innerText(), /반영을 확인하지 못/);
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 1, 'even a long outage never automatically repeats a completion');
+});
+
 test('each pending action can be undone even after another action is queued', async t => {
   const {page, requests} = await open(t);
   await page.clock.install();
