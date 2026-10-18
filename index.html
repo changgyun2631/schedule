@@ -393,7 +393,12 @@ let cat='';try{cat=localStorage.getItem('schedule-cat')||''}catch(_){}
 const vis=x=>!cat||catOf(x)===cat;
 const pill=c=>`<span class="pill p-${CK[c]}">${c}</span>`;
 
-async function fetchBlob(){const r=await fetch('data.enc.json?'+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error('데이터를 불러오지 못했어요');return r.json()}
+async function fetchBlob(){
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+  try{const r=await fetch('data.enc.json?'+Date.now(),{cache:'no-store',signal:controller.signal});if(!r.ok)throw new Error('데이터를 불러오지 못했어요');return await r.json()}
+  catch(error){if(controller.signal.aborted)throw new Error('연결이 지연되고 있어요. 인터넷 연결을 확인한 뒤 다시 열어 주세요.');throw error}
+  finally{clearTimeout(timeout)}
+}
 async function deriveKey(pw,blob){
   const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
   return crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt:b64d(blob.salt),iterations:blob.iter},base,{name:'AES-GCM',length:256},true,['decrypt']);
@@ -479,7 +484,7 @@ async function sendAct(a,{id,text}={}){
 }
 const ACT={done:['완료 처리해요','완료를','완료'],snooze:['내일로 미뤄요','미루기를','미루기'],del:['지워요','삭제를','삭제']};
 function actionStatus(){
-  const edit=editing?.busy?`<div><span>#${editing.id} 수정 반영 확인 중</span><button class="edit-resume" aria-label="#${editing.id} 수정 상태 열기">확인</button></div>`:'';
+  const edit=[...edits.values()].filter(x=>x.requestAt&&(x.busy||x.command||x.error)).map(x=>`<div><span>#${x.id} 수정 ${x.busy?'반영 확인 중':'확인 필요'}</span><button class="edit-resume" data-id="${x.id}" aria-label="#${x.id} 수정 상태 열기">확인</button></div>`).join('');
   $('actions').hidden=!queued.size&&!edit;
   $('actions').innerHTML=[...queued].map(([k,p])=>`<div><span>#${p.id} ${ACT[p.a][2]} ${p.state==='queued'?'대기 중':'보내는 중'}</span>${p.state==='queued'?`<button class="undo" data-k="${esc(k)}" aria-label="#${p.id} ${ACT[p.a][2]} 되돌리기">되돌리기</button>`:''}</div>`).join('')+edit;
 }
@@ -498,7 +503,7 @@ document.addEventListener('click',e=>{
   if(u){const k=u.dataset.k;if(queued.get(k)?.state!=='queued')return;clearTimeout(timers.get(k));timers.delete(k);queued.delete(k);pend.delete(k);saveQueued();savePend();$('toast').hidden=true;render();return}
   const b=e.target.closest('.dn,.sn,.rm');if(!b)return;
   const id=+b.dataset.id,a=b.classList.contains('dn')?'done':b.classList.contains('sn')?'snooze':'del';
-  if(editing?.command&&editing.id===id){openEdit(id);return}
+  if(edits.get(id)?.command){openEdit(id);return}
   if(!(data.done&&data.done.topic)){   // 열쇠가 없으면 완료만 예전 방식으로
     if(a!=='done')return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
     const q=new URLSearchParams({title:`done ${id}`,body:'웹페이지에서 보낸 완료 요청입니다.'});
@@ -576,31 +581,44 @@ for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=
   catch(_){if(key===sessionKey)toast('보내지 못했어요. 입력한 내용은 남겨 두었어요',8000)}
   finally{form.dataset.sending='false';entryControls(form);btn.textContent='추가'}
 };
+const edits=new Map(),EDIT_FIELDS=[['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd']];
 let editing=null,editTimer;
 const editFind=id=>[...data.items,...(data.memos||[]),...data.rules].find(x=>x.id===id&&x.edit);
+const editBase=x=>({text:x.text,date:x.edit.date||'',time:x.t||'',cat:catOf(x),day:x.edit.day,wd:x.edit.wd});
 $('editCat').innerHTML=CATS.map(c=>`<option>${c}</option>`).join('');
 $('editWeek').innerHTML=[...'월화수목금토일'].map((d,i)=>`<option value="${i}">${d}요일</option>`).join('');
-function editMessage(message,error=false){$('editState').textContent=message;$('editState').classList.toggle('error',error)}
-function editBusy(busy){editing.busy=busy;$('editFields').disabled=busy;$('editSave').disabled=busy;$('editSave').textContent=busy?'반영 확인 중':'저장';actionStatus()}
+function stashEdit(){if(editing)editing.draft=Object.fromEntries(EDIT_FIELDS.map(([field,name])=>[name,$(field).value]))}
+function editMessage(message,error=false,current=editing){
+  current.message=message;current.error=error;
+  if(editing===current){$('editState').textContent=message;$('editState').classList.toggle('error',error);$('editLatest').hidden=!current.conflict}
+}
+function editBusy(busy,current=editing){
+  current.busy=busy;
+  if(editing===current){$('editFields').disabled=busy;$('editSave').disabled=busy;$('editSave').textContent=busy?'반영 확인 중':'저장'}
+  actionStatus();
+}
 function openEdit(id,fresh=false){
   cancelVoice();
   if(!data)return;
-  if(editing?.command&&(editing.busy||editing.id!==id)){if(!$('editor').open)$('editor').showModal();return}
-  if(!editing||editing.id!==id||fresh){
+  stashEdit();
+  let current=edits.get(id);
+  if(!current||(fresh&&!current.command)){
     const x=editFind(id);if(!x||dn(x)||changing(id))return toast('이 일정은 현재 수정할 수 없어요.',5000);
-    const spec=x.edit,repeat=['monthly','weekly'].includes(spec.kind);
-    editing={id,rev:spec.rev,spec,busy:false,base:{text:x.text,date:spec.date||'',time:x.t||'',cat:catOf(x),day:spec.day,wd:spec.wd}};
-    $('editTitle').textContent=`${repeat?'반복 일정':spec.memo?'메모':'일정'} 수정 · #${id}`;
-    for(const [field,name] of [['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd']])$(field).value=editing.base[name]??'';
-    for(const [wrap,input,show] of [['editDateWrap','editDate',!repeat],['editDayWrap','editDay',spec.kind==='monthly'],['editWeekWrap','editWeek',spec.kind==='weekly']]){$(wrap).hidden=!show;$(input).disabled=!show}
-    $('editDate').required=spec.kind==='once'&&!spec.memo;$('editDay').required=spec.kind==='monthly';
-    $('editClearDate').hidden=!spec.memo||repeat;$('editClearTime').disabled=!x.t;
-    $('editHint').hidden=!repeat&&!spec.memo;$('editHint').textContent=repeat?'반복 일정 전체에 적용됩니다. 완료 기록은 유지됩니다.':'날짜를 지우면 날짜 없는 메모가 되고 알림도 해제됩니다.';
-    $('editLatest').hidden=true;editBusy(false);editMessage('');
+    const base=editBase(x);
+    current={id,rev:x.edit.rev,spec:x.edit,busy:false,base,draft:{...base}};edits.set(id,current);
   }
+  editing=current;
+  const spec=current.spec,repeat=['monthly','weekly'].includes(spec.kind);
+  $('editTitle').textContent=`${repeat?'반복 일정':spec.memo?'메모':'일정'} 수정 · #${id}`;
+  for(const [field,name] of EDIT_FIELDS)$(field).value=current.draft[name]??'';
+  for(const [wrap,input,show] of [['editDateWrap','editDate',!repeat],['editDayWrap','editDay',spec.kind==='monthly'],['editWeekWrap','editWeek',spec.kind==='weekly']]){$(wrap).hidden=!show;$(input).disabled=!show}
+  $('editDate').required=spec.memo?!!current.draft.time:spec.kind==='once';$('editDay').required=spec.kind==='monthly';
+  $('editClearDate').hidden=!spec.memo||repeat;$('editClearTime').disabled=!current.draft.time;
+  $('editHint').hidden=!repeat&&!spec.memo;$('editHint').textContent=repeat?'반복 일정 전체에 적용됩니다. 완료 기록은 유지됩니다.':'날짜를 지우면 날짜 없는 메모가 되고 알림도 해제됩니다.';
+  editBusy(current.busy);editMessage(current.message||'',!!current.error);
   if(!$('editor').open)$('editor').showModal();
 }
-document.addEventListener('click',e=>{const b=e.target.closest('.ed');if(b)openEdit(+b.dataset.id);else if(e.target.closest('.edit-resume')&&editing)openEdit(editing.id)});
+document.addEventListener('click',e=>{const b=e.target.closest('.ed,.edit-resume');if(b)openEdit(+b.dataset.id)});
 $('editClose').onclick=()=>$('editor').close();
 $('editor').addEventListener('keydown',e=>{
   if(e.key!=='Tab')return;
@@ -619,36 +637,59 @@ $('editClearDate').onclick=()=>{$('editDate').value='';$('editTime').value='';$(
 $('editLatest').onclick=async()=>{const current=editing;await reload();if(editing===current)openEdit(current.id,true)};
 $('editForm').onsubmit=async e=>{
   e.preventDefault();if(!editing||editing.busy||!key)return;
+  stashEdit();
   const changes={},current=editing,sessionKey=key,repeat=['weekly','monthly'].includes(current.spec.kind);
   const values={text:$('editText').value.trim(),...(!repeat?{date:$('editDate').value}:{}),time:$('editTime').value,cat:$('editCat').value};
   if(!values.text){editMessage('내용을 적어 주세요.',true);$('editText').focus();return}
   if(current.spec.kind==='monthly')values.day=+$('editDay').value;
   if(current.spec.kind==='weekly')values.wd=+$('editWeek').value;
   for(const [field,value] of Object.entries(values))if(value!==current.base[field])changes[field]=value;
-  if(!Object.keys(changes).length){editing=null;$('editor').close();return}
+  if(!Object.keys(changes).length){
+    if(current.command)return editMessage('이전 수정의 반영을 아직 확인하지 못했어요. 내용을 확인하거나 같은 수정으로 다시 시도해 주세요.',true);
+    edits.delete(current.id);editing=null;$('editor').close();actionStatus();return;
+  }
   if(!current.command||JSON.stringify(current.command.changes)!==JSON.stringify(changes))current.command={rid:crypto.randomUUID(),rev:current.rev,changes};
-  current.requestAt=Date.now();editBusy(true);editMessage('수정 요청을 보내고 있어요.');$('editLatest').hidden=true;
+  current.requestAt=Date.now();current.submitted={...current.draft};current.sent=false;current.conflict=false;editBusy(true);editMessage('수정 요청을 보내고 있어요.');
   try{
     await sendAct('edit',{id:current.id,text:JSON.stringify(current.command)});
-    if(key!==sessionKey||editing!==current)return;
-    editMessage('수정 요청을 보냈어요. 반영 결과를 확인하고 있어요.');
-    clearTimeout(editTimer);editTimer=setTimeout(checkEdit,3000);
-  }catch(_){if(key===sessionKey&&editing===current){editBusy(false);editMessage('전송을 확인하지 못했어요. 입력은 남아 있으니 다시 시도해 주세요.',true)}}
+    if(key!==sessionKey||edits.get(current.id)!==current)return;
+    current.sent=true;editMessage('수정 요청을 보냈어요. 반영 결과를 확인하고 있어요.',false,current);
+    scheduleEditCheck(3000);
+  }catch(_){if(key===sessionKey&&edits.get(current.id)===current){editBusy(false,current);editMessage('전송을 확인하지 못했어요. 입력은 남아 있으니 다시 시도해 주세요.',true,current)}}
 };
+function scheduleEditCheck(delay=5000){
+  clearTimeout(editTimer);
+  if([...edits.values()].some(x=>x.busy&&x.sent))editTimer=setTimeout(checkEdit,delay);
+}
 async function checkEdit(){
-  const current=editing;if(!key||!current?.busy)return;
-  await reload();if(editing!==current||!current.busy)return;
-  if(Date.now()-current.requestAt>=120000){editBusy(false);editMessage('아직 반영을 확인하지 못했어요. PC 봇이 켜져 있는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true);return}
-  editTimer=setTimeout(checkEdit,5000);
+  const sessionKey=key;if(!sessionKey)return;
+  await reload();if(key!==sessionKey)return;
+  for(const current of edits.values())if(current.busy&&current.sent&&Date.now()-current.requestAt>=120000){
+    editBusy(false,current);editMessage('아직 반영을 확인하지 못했어요. PC 봇이 켜져 있는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true,current);
+  }
+  scheduleEditCheck();
 }
 function editResult(){
-  if(!editing?.command)return;
-  const result=(data.edit_results||[]).find(r=>r.rid===editing.command.rid&&r.id===editing.id);if(!result)return;
-  clearTimeout(editTimer);editBusy(false);editing.command=null;
-  if(result.ok){editing=null;$('editor').close();toast('수정했어요.',4000)}
-  else{editMessage(result.message||'수정되지 않았어요. 입력은 남아 있어요.',true);$('editLatest').hidden=result.code!=='conflict';if(!$('editor').open)toast(esc(result.message||'수정되지 않았어요. 다시 열어 확인해 주세요.'),8000)}
+  stashEdit();
+  for(const current of edits.values()){
+    if(!current.command)continue;
+    const result=(data.edit_results||[]).find(r=>r.rid===current.command.rid&&r.id===current.id);if(!result)continue;
+    const newer=current.submitted&&Object.keys(current.submitted).some(field=>current.draft[field]!==current.submitted[field]),savedBase={...current.base,...current.command.changes};
+    current.command=null;editBusy(false,current);
+    if(result.ok&&newer){
+      const saved=editFind(current.id);current.base=saved?editBase(saved):savedBase;
+      if(saved){current.rev=saved.edit.rev;current.spec=saved.edit}
+      current.requestAt=null;current.submitted=null;current.conflict=false;
+      editMessage('이전 수정은 반영됐어요. 새로 고친 내용은 아직 저장 전이에요.',false,current);
+      if(editing===current)openEdit(current.id);
+    }
+    else if(result.ok){edits.delete(current.id);if(editing===current){editing=null;$('editor').close()}toast(`#${current.id} 수정했어요.`,4000)}
+    else{current.conflict=result.code==='conflict';editMessage(result.message||'수정되지 않았어요. 입력은 남아 있어요.',true,current)}
+  }
+  if(![...edits.values()].some(x=>x.busy&&x.sent))clearTimeout(editTimer);
+  actionStatus();
 }
-function resetEditor(){clearTimeout(editTimer);editing=null;$('editForm').reset();$('editor').close();actionStatus()}
+function resetEditor(){clearTimeout(editTimer);edits.clear();editing=null;$('editForm').reset();$('editor').close();actionStatus()}
 function list(el,items,emptyMsg,opt){el.innerHTML=items.length?items.map(x=>row(x,opt)).join(''):`<li class="empty">${emptyMsg}</li>`}
 const on=d=>data.items.filter(x=>x.date===d&&vis(x)&&!gone(x.id)).sort((a,b)=>(+dn(a))-(+dn(b))||(a.t||'99:99').localeCompare(b.t||'99:99')||a.id-b.id);   // 끝낸 건 아래, 시각 있는 것 먼저
 

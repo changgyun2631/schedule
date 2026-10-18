@@ -303,6 +303,111 @@ test('closing the editor preserves its draft and a rejected edit keeps the input
   assert.equal(await page.locator('#editText').inputValue(), '다른 곳에서 바꾼 내용');
 });
 
+test('each schedule keeps its own draft when switching between editors', async t => {
+  const {page} = await open(t);
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('첫 일정의 작성 중인 내용');
+  await page.locator('#editDate').fill(day(2));
+  await page.locator('#editTime').fill('17:30');
+  await page.locator('#editCat').selectOption('개인');
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  assert.match(await page.locator('#editTitle').innerText(), /#2/);
+  await page.locator('#editText').fill('둘째 일정의 작성 중인 내용');
+  await page.keyboard.press('Escape');
+  await page.locator('#tl .ed[data-id="1"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '첫 일정의 작성 중인 내용');
+  assert.equal(await page.locator('#editDate').inputValue(), day(2));
+  assert.equal(await page.locator('#editTime').inputValue(), '17:30');
+  assert.equal(await page.locator('#editCat').inputValue(), '개인');
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '둘째 일정의 작성 중인 내용');
+});
+
+test('independent edits finish out of order without closing or overwriting another editor', async t => {
+  const {page, requests} = await open(t);
+  let release;
+  const held = new Promise(resolve => {release = resolve});
+  t.after(() => release());
+  await page.context().route('https://ntfy.sh/**', async route => {
+    if(route.request().postDataJSON().id === 1) await held;
+    await route.fulfill({status: 200, body: '{}'});
+  });
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('첫 번째 수정');
+  await page.locator('#editSave').click();
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  assert.match(await page.locator('#editTitle').innerText(), /#2/, 'another edit can open while the first POST is still sending');
+  await page.locator('#editText').fill('두 번째 수정');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  assert.equal(await page.locator('#actions .edit-resume').count(), 2);
+  const commands = Object.fromEntries(requests.filter(r => r.url().includes('ntfy.sh')).map(r => [r.postDataJSON().id, JSON.parse(r.postDataJSON().text)]));
+  const updated = structuredClone(fixture);
+  updated.items[0].text = '첫 번째 수정';
+  updated.edit_results = [{rid: commands[1].rid, id: 1, ok: true}];
+  let blob = await encryptFixture(updated);
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.evaluate(() => reload());
+  release();
+  assert.equal(await page.locator('#editor').isVisible(), true);
+  assert.match(await page.locator('#editTitle').innerText(), /#2/);
+  assert.equal(await page.locator('#editText').inputValue(), '두 번째 수정');
+  assert.equal(await page.locator('#editSave').isDisabled(), true, 'a different success never unlocks the pending editor');
+  assert.equal(await page.locator('#actions .edit-resume[data-id="1"]').count(), 0);
+  assert.equal(await page.locator('#actions .edit-resume[data-id="2"]').count(), 1);
+  updated.items[1].text = '두 번째 수정';
+  updated.edit_results.push({rid: commands[2].rid, id: 2, ok: true});
+  blob = await encryptFixture(updated);
+  await page.evaluate(() => reload());
+  assert.equal(await page.locator('#editor').isVisible(), false);
+  assert.equal(await page.locator('#actions').isVisible(), false);
+  assert.match(await page.locator('#tl').innerText(), /첫 번째 수정/);
+  assert.match(await page.locator('#tl').innerText(), /두 번째 수정/);
+});
+
+test('a rejected inactive edit stays discoverable and cannot alter a different draft', async t => {
+  const {page, requests} = await open(t);
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('충돌해도 보관할 첫 일정');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  assert.match(await page.locator('#editTitle').innerText(), /#2/);
+  await page.locator('#editText').fill('아직 보내지 않은 둘째 일정');
+  await page.locator('#editClose').click();
+  await page.locator('#tl .dn[data-id="1"]').click();
+  assert.match(await page.locator('#editTitle').innerText(), /#1/, 'completion reopens the pending edit for the same schedule');
+  assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1);
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  const command = JSON.parse(requests.find(r => r.url().includes('ntfy.sh')).postDataJSON().text);
+  const updated = structuredClone(fixture);
+  updated.items[0].text = '텔레그램에서 먼저 수정한 내용';
+  updated.items[0].edit.rev = 'd'.repeat(64);
+  updated.edit_results = [{rid: command.rid, id: 1, ok: false, code: 'conflict', message: '다른 곳에서 먼저 바뀐 일정이에요.'}];
+  const blob = await encryptFixture(updated);
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.evaluate(() => reload());
+  assert.equal(await page.locator('#editText').inputValue(), '아직 보내지 않은 둘째 일정');
+  assert.equal(await page.locator('#editState').innerText(), '');
+  assert.equal(await page.locator('#editLatest').isVisible(), false);
+  assert.equal(await page.locator('#editSave').isDisabled(), false);
+  await page.locator('#editClose').click();
+  await page.locator('#actions .edit-resume[data-id="1"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '충돌해도 보관할 첫 일정');
+  assert.match(await page.locator('#editState').innerText(), /먼저 바뀐/);
+  assert.equal(await page.locator('#editLatest').isVisible(), true);
+  await page.locator('#editLatest').click();
+  await page.waitForFunction(() => document.getElementById('editText').value === '텔레그램에서 먼저 수정한 내용');
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '아직 보내지 않은 둘째 일정');
+});
+
 test('browser edits round-trip through the installed bot without changing real data', {skip: !process.env.SCHEDULE_BOT_DIR}, async t => {
   const {execFileSync} = require('node:child_process');
   const bridge = input => JSON.parse(execFileSync('python', [join(__dirname, 'edit_bridge.py')], {input: JSON.stringify({...input, today}), encoding: 'utf8', env: {...process.env, PYTHONIOENCODING: 'utf-8'}}));
@@ -329,6 +434,63 @@ test('browser edits round-trip through the installed bot without changing real d
   assert.match(await page.locator('#nl').innerText(), /T사 계약 검토/);
 });
 
+test('each edit times out separately and a late success preserves newer unsent text', async t => {
+  const {page, requests} = await open(t);
+  await page.clock.install();
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('첫 요청으로 보낸 내용');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  await page.locator('#editClose').click();
+  await page.clock.fastForward(61000);
+  await page.locator('#tl .ed[data-id="2"]').click();
+  await page.locator('#editText').fill('나중에 보낸 둘째 요청');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  await page.clock.fastForward(61000);
+  await page.waitForFunction(() => document.querySelector('#actions .edit-resume[data-id="1"]').parentElement.textContent.includes('확인 필요'));
+  assert.equal(await page.locator('#editSave').isDisabled(), true, 'the newer request keeps waiting for its own result');
+  await page.locator('#editClose').click();
+  await page.locator('#actions .edit-resume[data-id="1"]').click();
+  assert.equal(await page.locator('#editSave').isDisabled(), false);
+  await page.locator('#editText').fill(fixture.items[0].text);
+  await page.locator('#editSave').click();
+  assert.equal(await page.locator('#editor').isVisible(), true, 'reverting the draft cannot discard an unconfirmed request');
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 2);
+  await page.locator('#editText').fill('늦은 결과 뒤에도 보관할 새 내용');
+  await page.locator('#editClose').click();
+  await page.locator('#actions .edit-resume[data-id="2"]').click();
+  const first = JSON.parse(requests.find(r => r.url().includes('ntfy.sh')).postDataJSON().text);
+  const updated = structuredClone(fixture);
+  updated.items[0].text = '첫 요청으로 보낸 내용';
+  updated.items[0].edit.rev = 'd'.repeat(64);
+  updated.edit_results = [{rid: first.rid, id: 1, ok: true}];
+  let blob = await encryptFixture(updated);
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.evaluate(() => reload());
+  assert.match(await page.locator('#editTitle').innerText(), /#2/);
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="1"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '늦은 결과 뒤에도 보관할 새 내용');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  const latest = JSON.parse(requests.filter(r => r.url().includes('ntfy.sh')).at(-1).postDataJSON().text);
+  assert.equal(latest.rev, updated.items[0].edit.rev, 'a newer draft is compared with the version that was actually saved');
+  assert.deepEqual(latest.changes, {text: '늦은 결과 뒤에도 보관할 새 내용'});
+  await page.clock.fastForward(121000);
+  await page.waitForFunction(() => !document.getElementById('editSave').disabled);
+  await page.locator('#editText').fill('열린 창에서 계속 고친 내용');
+  updated.items[0].text = latest.changes.text;
+  updated.items[0].edit.rev = 'e'.repeat(64);
+  updated.edit_results.push({rid: latest.rid, id: 1, ok: true});
+  blob = await encryptFixture(updated);
+  await page.evaluate(() => reload());
+  assert.equal(await page.locator('#editor').isVisible(), true);
+  assert.equal(await page.locator('#editText').inputValue(), '열린 창에서 계속 고친 내용', 'a receipt cannot discard text being typed in the open editor');
+  assert.equal(await page.locator('#editSave').isDisabled(), false);
+  assert.match(await page.locator('#editState').innerText(), /저장 전/);
+});
+
 test('a failed edit keeps its draft and retry reuses the same request identity', async t => {
   const {page, requests} = await open(t);
   await page.context().route('https://ntfy.sh/**', route => route.fulfill({status: 503, body: ''}));
@@ -346,6 +508,92 @@ test('a failed edit keeps its draft and retry reuses the same request identity',
   const sent = requests.filter(r => r.url().includes('ntfy.sh')).map(r => JSON.parse(r.postDataJSON().text));
   assert.equal(sent.length, 2, 'submitting again while waiting does not send another request');
   assert.equal(sent[1].rid, first.rid, 'ambiguous delivery can be retried safely');
+});
+
+test('a delivery failure for a closed editor preserves its draft and retry identity', async t => {
+  const {page, requests} = await open(t);
+  let release;
+  const held = new Promise(resolve => {release = resolve});
+  t.after(() => release());
+  await page.context().route('https://ntfy.sh/**', async route => {await held; await route.fulfill({status: 503, body: ''})});
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('전송 실패해도 보관할 내용');
+  await page.locator('#editSave').click();
+  await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  await page.locator('#editText').fill('실패 응답과 무관한 새 초안');
+  release();
+  await page.waitForFunction(() => document.querySelector('#actions .edit-resume[data-id="1"]').parentElement.textContent.includes('확인 필요'));
+  assert.equal(await page.locator('#editState').innerText(), '');
+  assert.equal(await page.locator('#editSave').isDisabled(), false);
+  assert.equal(await page.locator('#editText').inputValue(), '실패 응답과 무관한 새 초안');
+  await page.locator('#editClose').click();
+  await page.locator('#actions .edit-resume[data-id="1"]').click();
+  assert.match(await page.locator('#editState').innerText(), /전송을 확인하지 못/);
+  assert.equal(await page.locator('#editText').inputValue(), '전송 실패해도 보관할 내용');
+  const first = JSON.parse(requests.find(r => r.url().includes('ntfy.sh')).postDataJSON().text);
+  await page.context().route('https://ntfy.sh/**', route => route.fulfill({status: 200, body: '{}'}));
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  const retried = JSON.parse(requests.filter(r => r.url().includes('ntfy.sh')).at(-1).postDataJSON().text);
+  assert.equal(retried.rid, first.rid);
+});
+
+test('a stalled data refresh cannot leave independent editors locked indefinitely', async t => {
+  const {page, requests} = await open(t);
+  await page.clock.install();
+  for(const id of [1, 2]) {
+    await page.locator('#tl .ed[data-id="' + id + '"]').click();
+    await page.locator('#editText').fill('연결이 끊겨도 남을 내용 ' + id);
+    await page.locator('#editSave').click();
+    await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+    await page.locator('#editClose').click();
+  }
+  if(process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'multiple-edits-waiting.png')});
+  let release;
+  const held = new Promise(resolve => {release = resolve});
+  t.after(() => release());
+  const blob = await encryptFixture(fixture);
+  await page.context().route('**/data.enc.json?*', async route => {await held; await route.fulfill({contentType: 'application/json', body: blob})});
+  const loading = page.waitForRequest('**/data.enc.json?*');
+  await page.clock.runFor(3100);
+  await loading;
+  await page.clock.runFor(16000);
+  await page.clock.fastForward(125000);
+  await page.clock.runFor(16000);
+  await page.waitForFunction(() => [...document.querySelectorAll('#actions .edit-resume')].every(el => el.parentElement.textContent.includes('확인 필요')), null, {timeout: 1500});
+  for(const id of [1, 2]) {
+    await page.locator('#actions .edit-resume[data-id="' + id + '"]').click();
+    assert.equal(await page.locator('#editText').inputValue(), '연결이 끊겨도 남을 내용 ' + id);
+    assert.equal(await page.locator('#editSave').isDisabled(), false);
+    await page.locator('#editClose').click();
+  }
+  assert.equal(requests.filter(r => r.url().includes('ntfy.sh')).length, 2, 'a refresh timeout never resends edits automatically');
+});
+
+test('a stalled unlock offers a clear retry after the data request times out', async t => {
+  const {page} = await open(t);
+  await page.reload();
+  await page.locator('#lock').waitFor({state: 'visible'});
+  await page.clock.install();
+  let release;
+  const held = new Promise(resolve => {release = resolve});
+  t.after(() => release());
+  const blob = await encryptFixture(fixture);
+  await page.context().route('**/data.enc.json?*', async route => {await held; await route.fulfill({contentType: 'application/json', body: blob})});
+  await page.locator('#pw').fill('preview');
+  const loading = page.waitForRequest('**/data.enc.json?*');
+  await page.locator('#go').click();
+  await loading;
+  await page.clock.runFor(16000);
+  await page.waitForFunction(() => !document.getElementById('go').disabled);
+  assert.match(await page.locator('#err').innerText(), /연결.*지연/);
+  assert.equal(await page.locator('#app').isVisible(), false);
+  release();
+  await page.context().unroute('**/data.enc.json?*');
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
 });
 
 test('an unconfirmed edit releases the form without losing its draft or retry identity', async t => {
@@ -377,6 +625,9 @@ test('forgetting the device clears the editor and ignores a late data refresh', 
   await page.locator('#tl .ed[data-id="1"]').click();
   await page.locator('#editText').fill('기억 해제 때 지워야 할 내용');
   await page.locator('#editClose').click();
+  await page.locator('#tl .ed[data-id="2"]').click();
+  await page.locator('#editText').fill('함께 지워야 할 다른 초안');
+  await page.locator('#editClose').click();
   let release;
   const held = new Promise(resolve => {release = resolve});
   t.after(() => release());
@@ -393,6 +644,14 @@ test('forgetting the device clears the editor and ignores a late data refresh', 
   assert.equal(await page.locator('#editor').isVisible(), false);
   assert.equal(await page.locator('#editText').inputValue(), '');
   assert.equal(await page.evaluate(() => data === null), true, 'old decryption cannot restore data after logout');
+  await page.locator('#pw').fill('preview');
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  for(const id of [1, 2]) {
+    await page.locator('#tl .ed[data-id="' + id + '"]').click();
+    assert.equal(await page.locator('#editText').inputValue(), fixture.items[id - 1].text, 'unlocking again never restores a discarded draft');
+    await page.locator('#editClose').click();
+  }
 });
 
 test('recurring and memo editors expose their real scheduling fields', async t => {
