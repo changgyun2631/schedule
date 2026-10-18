@@ -332,7 +332,7 @@ test('the logo light flows without moving content and respects reduced motion', 
   const contentBefore = await page.locator('.date-heading').boundingBox();
   assert.ok(await mark.evaluate(el => el.getAnimations({subtree: true}).length) > 0);
   const period = await mark.evaluate(el => el.getAnimations({subtree: true}).find(animation => animation.animationName === 'logo-breeze').effect.getTiming().duration);
-  assert.equal(period, 1500, 'the light repeats every 1.5 seconds');
+  assert.equal(period, 4000, 'the light repeats every four seconds');
   await mark.evaluate(el => el.getAnimations({subtree: true}).forEach(animation => {animation.pause(); animation.currentTime = 0}));
   const before = await mark.evaluate(el => getComputedStyle(el.querySelector('.mark-light'), '::before').transform);
   if (process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'allow', path: join(process.env.UI_SCREENSHOTS, 'mobile-logo-rest.png')});

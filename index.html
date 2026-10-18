@@ -237,7 +237,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
 @media(prefers-reduced-motion:no-preference){button{transition:background-color .15s,color .15s,opacity .15s}}
 @media(prefers-reduced-motion:no-preference){
   .hero-mark{animation:logo-drift 20s ease-in-out infinite}
-  .mark-light:before{animation:logo-breeze 1.5s cubic-bezier(.4,0,.2,1) infinite}
+  .mark-light:before{animation:logo-breeze 4s cubic-bezier(.4,0,.2,1) infinite}
 }
 @keyframes logo-drift{0%,100%{transform:translate3d(0,0,0) rotate(-1deg)}50%{transform:translate3d(-4px,4px,0) rotate(1deg)}}
 @keyframes logo-breeze{0%,15%{transform:translate3d(-100%,0,0) rotate(-22deg);opacity:0}35%{opacity:.18}65%{opacity:.18}85%,100%{transform:translate3d(450%,0,0) rotate(-22deg);opacity:0}}
