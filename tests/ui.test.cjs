@@ -63,7 +63,7 @@ async function open(t, options = {}, weather = {}) {
     if (url.origin === base) {
       if (url.pathname === '/data.enc.json') return route.fulfill({contentType: 'application/json', body: blob});
       const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      if (!['index.html', 'sw.js', 'manifest.webmanifest'].includes(file) && !/^icons\/[\w.-]+$/.test(file)) return route.fulfill({status: 404});
+      if (!['index.html', 'tokens.css', 'sw.js', 'manifest.webmanifest'].includes(file) && !/^icons\/[\w.-]+$/.test(file)) return route.fulfill({status: 404});
       return route.fulfill({path: join(root, file)});
     }
     if (url.hostname === 'api.open-meteo.com') return route.fulfill({status: weather.status || 200, contentType: 'application/json', body: JSON.stringify(weatherFixture)});
@@ -80,6 +80,24 @@ async function open(t, options = {}, weather = {}) {
   t.after(() => assert.deepEqual(errors, [], 'no browser script errors'));
   return {page, requests};
 }
+
+test('CG branding loads locally on the lock screen and app in both themes', async t => {
+  const {page, requests} = await open(t);
+  for (const colorScheme of ['light', 'dark']) {
+    await page.emulateMedia({colorScheme});
+    const logo = page.locator('#app .brand img');
+    assert.equal(await logo.getAttribute('alt'), 'CGPORTFOLIO');
+    assert.equal(await logo.evaluate(img => img.complete && img.naturalWidth > 0), true);
+    assert.match(await page.title(), /CG/);
+  }
+  assert.equal(await page.locator('#today').getAttribute('datetime'), today);
+  assert.match(await page.locator('#today').getAttribute('aria-label'), /\d+년 \d+월 \d+일 [일월화수목금토]요일/);
+  await page.reload();
+  const lockLogo = page.locator('#lock img');
+  await lockLogo.waitFor({state: 'visible'});
+  assert.equal(await lockLogo.evaluate(img => img.complete && img.naturalWidth > 0), true);
+  assert.equal(requests.some(request => request.url().includes('tailab9ee1.ts.net')), false, 'the brand must work without the private portfolio server');
+});
 
 test('mobile starts with actionable tasks and switches schedule views without losing filters', async t => {
   const {page} = await open(t);
@@ -330,7 +348,7 @@ test('closing a page during delivery never automatically repeats the request', a
 
 test('phone, desktop and dark mode fit the viewport with usable controls', async t => {
   const {page} = await open(t);
-  for (const width of [360, 390, 768, 1280]) {
+  for (const width of [320, 375, 390, 414, 768, 1280]) {
     await page.setViewportSize({width, height: 900});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `no overflow at ${width}px`);
     const button = await page.locator('#tl .dn').first().boundingBox();
@@ -375,6 +393,9 @@ test('phone, desktop and dark mode fit the viewport with usable controls', async
     await page.emulateMedia({colorScheme: 'light'});
     await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'desktop-light.png'), fullPage: true});
     await page.setViewportSize({width: 390, height: 844});
+    await page.emulateMedia({colorScheme: 'dark'});
+    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-dark.png')});
+    await page.emulateMedia({colorScheme: 'light'});
     await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-light.png')});
     await page.locator('#wxb').click();
     await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-weather.png')});
@@ -413,7 +434,8 @@ test('landscape phones keep the bottom navigation and fit every screen', async t
   const nav = await page.locator('.tabs').boundingBox();
   assert.ok(nav.y > 300 && nav.y + nav.height <= 390, 'phone navigation remains at the bottom in landscape');
   const firstTask = await page.locator('#tl .dn').first().boundingBox();
-  assert.ok(firstTask.y + firstTask.height <= nav.y, 'first task is visible without scrolling in landscape');
+  if (process.env.UI_SCREENSHOTS) await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-landscape.png')});
+  assert.ok(firstTask.y + firstTask.height <= nav.y, `first task ends at ${firstTask.y + firstTask.height}, above navigation at ${nav.y} in landscape`);
   for (const tab of ['tabM', 'tabQ', 'tabS']) {
     await page.locator('#' + tab).tap();
     const panel = {tabM: '#vMemo', tabQ: '#vSearch', tabS: '#vSch'}[tab];
@@ -429,8 +451,8 @@ test('landscape phones keep the bottom navigation and fit every screen', async t
 test('short portrait phones show the first task before scrolling', async t => {
   const {page} = await open(t, {isMobile: true, hasTouch: true, viewport: {width: 320, height: 568}});
   const firstTask = await page.locator('#tl .dn').first().boundingBox(), nav = await page.locator('.tabs').boundingBox();
-  assert.ok(firstTask.y + firstTask.height <= nav.y, 'first task clears the navigation on a small phone');
   if (process.env.UI_SCREENSHOTS) await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-small.png')});
+  assert.ok(firstTask.y + firstTask.height <= nav.y, `first task ends at ${firstTask.y + firstTask.height}, above navigation at ${nav.y} on a small phone`);
 });
 
 test('short mobile viewports keep the focused input and task actions above navigation', async t => {
