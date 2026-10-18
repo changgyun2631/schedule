@@ -59,10 +59,11 @@ before(async () => {
 
 after(async () => {await browser?.close()});
 
-async function open(t, options = {}, weather = {}) {
+async function open(t, options = {}, weather = {}, init) {
   const blob = await encryptFixture(weather.payload || (weather.configured === false ? {...fixture, wx: null} : fixture));
   const context = await browser.newContext({viewport: {width: 390, height: 844}, colorScheme: 'light', serviceWorkers: 'block', ...options});
   t.after(() => context.close());
+  if (init) await context.addInitScript(init);
   const requests = [], errors = [];
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
@@ -87,22 +88,155 @@ async function open(t, options = {}, weather = {}) {
   return {page, requests};
 }
 
+function mockSpeech() {
+  window.speechInstances = [];
+  window.SpeechRecognition = undefined;
+  window.webkitSpeechRecognition = class {
+    constructor() {window.speechInstances.push(this)}
+    start() {this.started = true; this.onstart?.()}
+    stop() {this.stopped = true}
+    abort() {this.aborted = true; this.onend?.()}
+    emit(...texts) {this.onresult?.({results: texts.map(transcript => [{transcript}])})}
+  };
+}
+
+test('voice input replaces interim speech and only sends after explicit confirmation', async t => {
+  const {page, requests} = await open(t, {}, {}, mockSpeech);
+  await page.locator('#sadd').fill('내일');
+  const mic = page.getByRole('button', {name: '음성으로 일정 입력', exact: true});
+  assert.equal(await mic.count(), 1, 'the schedule input has a microphone button');
+  await mic.click();
+  assert.equal(await page.locator('#svoice').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('#saddf button[type=submit]').isDisabled(), true);
+  assert.deepEqual(await page.evaluate(() => {
+    const r = speechInstances[0];
+    return {started: r.started, lang: r.lang, interim: r.interimResults, continuous: r.continuous};
+  }), {started: true, lang: 'ko-KR', interim: true, continuous: false});
+  await page.evaluate(() => speechInstances[0].emit('오후 세'));
+  assert.equal(await page.locator('#sadd').inputValue(), '내일 오후 세');
+  await page.evaluate(() => speechInstances[0].emit('오후 3시', '거래처 미팅'));
+  assert.equal(await page.locator('#sadd').inputValue(), '내일 오후 3시 거래처 미팅');
+  assert.equal(requests.some(r => r.url().includes('ntfy.sh')), false, 'speaking never saves an unreviewed schedule');
+  if(process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-voice-listening.png')});
+  await page.locator('#svoice').click();
+  assert.equal(await page.evaluate(() => speechInstances[0].stopped), true, 'the same button stops listening');
+  await page.evaluate(() => {speechInstances[0].emit('오후 3시', '거래처 미팅 #업무'); speechInstances[0].onend()});
+  assert.equal(await page.locator('#svoice').getAttribute('aria-pressed'), 'false');
+  await page.locator('#sadd').fill('내일 오후 3시 거래처 미팅 #미팅');
+  await page.locator('#saddf button[type=submit]').click();
+  await page.locator('#spend').waitFor({state: 'visible'});
+  const actions = requests.filter(r => r.url().includes('ntfy.sh'));
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].postDataJSON().text, '내일 오후 3시 거래처 미팅 #미팅');
+});
+
+test('typing, switching views and locking abort voice input and ignore late results', async t => {
+  const {page} = await open(t, {}, {}, mockSpeech);
+  await page.locator('#svoice').click();
+  await page.evaluate(() => speechInstances[0].emit('중간 결과'));
+  await page.locator('#sadd').fill('직접 고친 일정');
+  assert.equal(await page.evaluate(() => speechInstances[0].aborted), true);
+  await page.evaluate(() => speechInstances[0].emit('늦게 도착한 결과'));
+  assert.equal(await page.locator('#sadd').inputValue(), '직접 고친 일정');
+  await page.locator('#svoice').click();
+  await page.locator('#tabM').click();
+  await page.locator('#vMemo').waitFor({state: 'visible'});
+  assert.equal(await page.evaluate(() => speechInstances[1].aborted), true);
+  await page.evaluate(() => speechInstances[1].emit('다른 화면의 결과'));
+  await page.locator('#tabS').click();
+  await page.locator('#vSch').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#sadd').inputValue(), '직접 고친 일정');
+  await page.locator('#svoice').click();
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', {configurable: true, value: true});
+    document.dispatchEvent(new Event('visibilitychange'));
+    delete document.hidden;
+  });
+  assert.equal(await page.evaluate(() => speechInstances[2].aborted), true, 'backgrounding the app stops microphone use');
+  await page.locator('#svoice').click();
+  await page.evaluate(() => showLock());
+  assert.equal(await page.evaluate(() => speechInstances[3].aborted), true);
+  await page.evaluate(() => speechInstances[3].emit('잠금 뒤 결과'));
+  assert.equal(await page.locator('#sadd').inputValue(), '직접 고친 일정');
+});
+
+test('voice errors and an unresponsive recognizer release controls without losing text', async t => {
+  const {page} = await open(t, {}, {}, mockSpeech);
+  await page.locator('#sadd').fill('남겨 둘 내용');
+  for(const error of ['not-allowed', 'audio-capture', 'network', 'no-speech']) {
+    await page.locator('#svoice').click();
+    await page.evaluate(error => speechInstances.at(-1).onerror({error}), error);
+    assert.equal(await page.locator('#svoice').getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.locator('#saddf button[type=submit]').isDisabled(), false);
+    assert.equal(await page.locator('#sadd').inputValue(), '남겨 둘 내용');
+    assert.ok((await page.locator('#svoiceState').innerText()).length > 0);
+  }
+  await page.clock.install();
+  await page.locator('#svoice').click();
+  await page.clock.runFor(61000);
+  assert.equal(await page.evaluate(() => speechInstances.at(-1).stopped), true);
+  await page.clock.runFor(5500);
+  assert.equal(await page.evaluate(() => speechInstances.at(-1).aborted), true);
+  assert.equal(await page.locator('#saddf button[type=submit]').isDisabled(), false);
+  assert.equal(await page.locator('#sadd').inputValue(), '남겨 둘 내용');
+});
+
+test('unsupported browsers and start failures keep manual entry available', async t => {
+  for(const init of [
+    () => {window.SpeechRecognition = window.webkitSpeechRecognition = undefined},
+    () => {window.SpeechRecognition = class {start() {throw new Error('unavailable')} abort() {}}}
+  ]) {
+    const {page} = await open(t, {}, {}, init);
+    await page.locator('#sadd').fill('직접 입력');
+    await page.locator('#svoice').click();
+    assert.equal(await page.locator('#svoice').getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.locator('#saddf button[type=submit]').isDisabled(), false);
+    assert.equal(await page.locator('#sadd').inputValue(), '직접 입력');
+    assert.ok((await page.locator('#svoiceState').innerText()).length > 0);
+  }
+});
+
 test('CG branding loads locally on the lock screen and app in both themes', async t => {
   const {page, requests} = await open(t);
   for (const colorScheme of ['light', 'dark']) {
     await page.emulateMedia({colorScheme});
     const logo = page.locator('#app .brand img');
-    assert.equal(await logo.getAttribute('alt'), 'CGPORTFOLIO');
+    assert.equal(await logo.getAttribute('alt'), 'CG PLANER');
     assert.equal(await logo.evaluate(img => img.complete && img.naturalWidth > 0), true);
-    assert.match(await page.title(), /CG/);
+    assert.equal(await page.title(), 'CG PLANER');
   }
   assert.equal(await page.locator('#today').getAttribute('datetime'), today);
   assert.match(await page.locator('#today').getAttribute('aria-label'), /\d+년 \d+월 \d+일 [일월화수목금토]요일/);
+  const manifest = JSON.parse(await readFile(join(root, 'manifest.webmanifest'), 'utf8'));
+  assert.equal(manifest.name, 'CG PLANER');
+  assert.equal(manifest.short_name, 'CG PLANER');
   await page.reload();
   const lockLogo = page.locator('#lock img');
   await lockLogo.waitFor({state: 'visible'});
   assert.equal(await lockLogo.evaluate(img => img.complete && img.naturalWidth > 0), true);
   assert.equal(requests.some(request => request.url().includes('tailab9ee1.ts.net')), false, 'the brand must work without the private portfolio server');
+});
+
+test('the logo light flows without moving content and respects reduced motion', async t => {
+  const {page} = await open(t);
+  const mark = page.locator('.hero-mark');
+  assert.equal(await mark.count(), 1, 'the background CG symbol has a light layer');
+  assert.equal(await mark.getAttribute('aria-hidden'), 'true');
+  const contentBefore = await page.locator('.date-heading').boundingBox();
+  assert.ok(await mark.evaluate(el => el.getAnimations({subtree: true}).length) > 0);
+  await mark.evaluate(el => el.getAnimations({subtree: true}).forEach(animation => {animation.pause(); animation.currentTime = 0}));
+  const before = await mark.evaluate(el => getComputedStyle(el.querySelector('.mark-light'), '::before').transform);
+  if (process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'allow', path: join(process.env.UI_SCREENSHOTS, 'mobile-logo-rest.png')});
+  await mark.evaluate(el => el.getAnimations({subtree: true}).forEach(animation => {animation.currentTime = 6000}));
+  const after = await mark.evaluate(el => getComputedStyle(el.querySelector('.mark-light'), '::before').transform);
+  assert.notEqual(after, before, 'the highlight travels across the logo');
+  assert.deepEqual(await page.locator('.date-heading').boundingBox(), contentBefore, 'decoration never moves the date or weather');
+  if (process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'allow', path: join(process.env.UI_SCREENSHOTS, 'mobile-logo-breeze.png')});
+  await page.locator('#wxb').click();
+  assert.equal(await page.locator('#wxp').isVisible(), true, 'the decorative light never intercepts taps');
+  await page.emulateMedia({reducedMotion: 'reduce'});
+  assert.equal(await mark.evaluate(el => el.getAnimations({subtree: true}).length), 0);
+  assert.equal(await mark.isVisible(), true, 'reduced motion keeps the static brand mark');
 });
 
 test('editing sends a signed field patch and waits for the actual saved result', async t => {
@@ -397,7 +531,7 @@ test('completion can be undone and adding keeps the signed request flow', async 
   await page.locator('#actions .undo').click();
   assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1);
   await page.locator('#sadd').fill('내일 자료 검토 #업무');
-  await page.locator('#saddf button').click();
+  await page.locator('#saddf button[type=submit]').click();
   await page.locator('#spend').waitFor({state: 'visible'});
   const add = requests.find(r => r.url().includes('ntfy.sh'));
   assert.ok(add, 'addition reaches the existing transport');
@@ -420,10 +554,12 @@ test('new text entered while an addition is sending is kept for the next submiss
       await route.fulfill({status: 200, body: '{}'});
     });
     await page.locator('#' + input).fill('첫 번째 내용');
-    await page.locator('#' + form + ' button').click();
+    await page.locator('#' + form + ' button[type=submit]').click();
+    if(form === 'saddf') assert.equal(await page.locator('#svoice').isDisabled(), true, 'recognition cannot overwrite an addition that is being sent');
     await page.locator('#' + input).fill('다음에 보낼 내용');
     release();
-    await page.waitForFunction(id => !document.querySelector('#' + id + ' button').disabled, form);
+    await page.waitForFunction(id => !document.querySelector('#' + id + ' button[type=submit]').disabled, form);
+    if(form === 'saddf') assert.equal(await page.locator('#svoice').isDisabled(), false);
     assert.equal(await page.locator('#' + input).inputValue(), '다음에 보낼 내용');
   }
 });
@@ -497,10 +633,10 @@ test('a stalled addition releases the form and keeps the unsent text', async t =
   });
   await page.locator('#sadd').fill('끊겨도 남아 있어야 할 내용');
   const sent = page.waitForRequest('https://ntfy.sh/**');
-  await page.locator('#saddf button').click();
+  await page.locator('#saddf button[type=submit]').click();
   await sent;
   await page.clock.runFor(16000);
-  assert.equal(await page.locator('#saddf button').isDisabled(), false, 'stalled requests do not leave the form locked');
+  assert.equal(await page.locator('#saddf button[type=submit]').isDisabled(), false, 'stalled requests do not leave the form locked');
   assert.equal(await page.locator('#sadd').inputValue(), '끊겨도 남아 있어야 할 내용');
   assert.match(await page.locator('#toast').innerText(), /보내지 못/);
 });
@@ -606,7 +742,7 @@ test('phone, desktop and dark mode fit the viewport with usable controls', async
         });
         return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
       };
-      return ['#saddf button', '.date-weekday', '#wxb', '#tl .dn', '#tl .pill'].map(selector => {
+      return ['#saddf button[type=submit]', '#svoice', '.date-weekday', '#wxb', '#tl .dn', '#tl .pill'].map(selector => {
         const el = document.querySelector(selector), style = getComputedStyle(el);
         let parent = el, bg = style.backgroundColor;
         while (bg === 'rgba(0, 0, 0, 0)' && parent.parentElement) {parent = parent.parentElement; bg = getComputedStyle(parent).backgroundColor}

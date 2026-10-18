@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name="robots" content="noindex,nofollow">
 <meta name="color-scheme" content="light dark">
-<meta name="apple-mobile-web-app-title" content="CG 일정">
-<title>CG 일정관리</title>
+<meta name="apple-mobile-web-app-title" content="CG PLANER">
+<title>CG PLANER</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#eef4f5" media="(prefers-color-scheme:light)">
 <meta name="theme-color" content="#101e27" media="(prefers-color-scheme:dark)">
@@ -14,8 +14,8 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=cg1">
 <link rel="stylesheet" href="tokens.css">
 <style>
-/* Hallmark · macrostructure: personal planner · theme: CGPORTFOLIO brand · tone: composed, personal
- * Original vector and #0c7096 anchor from the user's portfolio. Compact daily view; no decorative motion. */
+/* Hallmark · macrostructure: personal planner · theme: CG PLANER · tone: composed, personal
+ * Original vector and #0c7096 anchor from the user's portfolio. Compact daily view with a quiet CG light. */
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-padding-top:120px}
 body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 var(--font-body);letter-spacing:-.025em}
@@ -118,7 +118,10 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .err{color:var(--red);min-height:1.6em;margin-top:10px;font-size:14px}
 .link{background:none;border:0;color:var(--mut);text-decoration:underline;font-size:13px;padding:6px 0;min-height:44px}
 .hero{position:relative;isolation:isolate;overflow:hidden;padding:24px 28px;margin-bottom:16px;border-radius:24px;background:var(--hero);color:var(--hero-tx);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;align-items:center}
-.hero:before{content:'';position:absolute;z-index:-1;pointer-events:none;right:28%;top:-24px;width:220px;height:220px;background:url('icons/cg-mark.svg') center/contain no-repeat;opacity:.045}
+.hero-mark{position:absolute;z-index:-1;pointer-events:none;right:28%;top:-24px;width:220px;height:220px;filter:drop-shadow(0 0 12px var(--hero-glow))}
+.hero-mark:before,.mark-light{position:absolute;inset:0;mask:url('icons/cg-mark.svg') center/contain no-repeat}
+.hero-mark:before{content:'';background:var(--hero-glow);opacity:.065}
+.mark-light:before{content:'';position:absolute;left:-100%;top:-30%;width:65%;height:160%;background:linear-gradient(90deg,transparent,var(--hero-glow),transparent);filter:blur(10px);opacity:.18;transform:translate3d(-100%,0,0) rotate(-22deg)}
 .hero :focus-visible{outline-color:var(--hero-tx)}
 .date-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
 #today{display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -165,6 +168,13 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .add input{width:100%;min-width:0;font-size:16px;padding:10px 12px;border:1px solid transparent;border-radius:8px;background:transparent}
 .add input::placeholder{color:var(--mut);opacity:1}
 .add button{border:0;background:var(--acc);color:var(--onacc);font-weight:600;border-radius:12px;padding:0 20px;min-height:46px;font-size:14px;white-space:nowrap}
+#saddf{grid-template-columns:minmax(0,1fr) auto auto}
+.add .voice{display:grid;place-items:center;width:46px;padding:0;background:var(--accbg);color:var(--acc)}
+.add .voice[aria-pressed=true]{background:var(--redbg);color:var(--red)}
+.voice-stop,.voice[aria-pressed=true] .voice-mic{display:none}
+.voice[aria-pressed=true] .voice-stop{display:block}
+.voice-state{grid-column:1/-1;color:var(--mut);font-size:13px}
+.voice-state.error{color:var(--red)}
 .entry-hint{grid-column:1/-1;color:var(--mut);font-size:12px}
 .add button:disabled{opacity:.6}
 .btns{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;max-width:108px}
@@ -197,7 +207,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
   .app-head{padding:0 0 16px;min-height:36px}.brand{width:100%;justify-content:space-between;gap:12px}.brand img{width:120px}.brand-product{border:0;padding:4px 10px;background:var(--accbg);color:var(--acc);border-radius:8px;font-size:12px}
   .tabs{position:fixed;bottom:calc(10px + env(safe-area-inset-bottom));left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));z-index:10;padding:4px;gap:4px;border-radius:20px;box-shadow:var(--nav-shadow)}
   .tab{flex:1;flex-direction:column;gap:2px;font-size:11px;min-height:52px;padding:4px;position:relative;border-radius:15px}.tab i{position:absolute;top:3px;left:calc(50% + 12px);font-size:11px;margin:0}
-  .hero{grid-template-columns:minmax(0,1fr);padding:20px;gap:16px;border-radius:20px;margin-bottom:12px}.hero:before{right:-28px;top:-36px;width:220px;height:220px}
+  .hero{grid-template-columns:minmax(0,1fr);padding:20px;gap:16px;border-radius:20px;margin-bottom:12px}.hero-mark{right:-28px;top:-36px}
   #vSch:has(#modeToday[aria-selected=false]) .hero{padding:12px 20px}
   #vSch:has(#modeToday[aria-selected=false]) .stats{display:none}
   #vSch:has(#modeToday[aria-selected=false]) #dateDay{font-size:36px}
@@ -225,6 +235,12 @@ body:has(#actions:not([hidden])) #toast{display:none}
   .schedule-tools{flex-direction:row;gap:12px;padding:4px 0}.modes{align-self:auto}.chips{flex:1}.focus-main>.card{padding-top:12px}.focus-main h2{margin-bottom:8px}
 }
 @media(prefers-reduced-motion:no-preference){button{transition:background-color .15s,color .15s,opacity .15s}}
+@media(prefers-reduced-motion:no-preference){
+  .hero-mark{animation:logo-drift 20s ease-in-out infinite}
+  .mark-light:before{animation:logo-breeze 12s cubic-bezier(.4,0,.2,1) infinite}
+}
+@keyframes logo-drift{0%,100%{transform:translate3d(0,0,0) rotate(-1deg)}50%{transform:translate3d(-4px,4px,0) rotate(1deg)}}
+@keyframes logo-breeze{0%,15%{transform:translate3d(-100%,0,0) rotate(-22deg);opacity:0}35%{opacity:.18}65%{opacity:.18}85%,100%{transform:translate3d(450%,0,0) rotate(-22deg);opacity:0}}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -237,7 +253,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
 </defs></svg>
 <main>
 <section id="lock" class="lock" hidden>
-  <img src="icons/cgportfolio.svg" width="176" height="56" alt="CGPORTFOLIO">
+  <img src="icons/cg-planer.svg" width="176" height="49" alt="CG PLANER">
   <h1>나의 일정관리</h1>
   <p>비밀번호로 개인 일정을 열어보세요.</p>
   <form id="f" autocomplete="off">
@@ -251,7 +267,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
 
 <section id="app" hidden>
   <header class="app-head">
-    <div class="brand"><img src="icons/cgportfolio.svg" width="140" height="45" alt="CGPORTFOLIO"><span class="brand-product">일정관리</span></div>
+    <div class="brand"><img src="icons/cg-planer.svg" width="140" height="39" alt="CG PLANER"><span class="brand-product">일정관리</span></div>
     <nav class="tabs" role="tablist" aria-label="화면">
       <button class="tab on" id="tabS" role="tab" aria-controls="vSch" aria-selected="true"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg><span>일정</span></button>
       <button class="tab" id="tabM" role="tab" aria-controls="vMemo" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-memo"/></svg><span>메모장</span><i id="mcnt"></i></button>
@@ -262,6 +278,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
   <div id="actions" class="action-status" aria-label="처리 중인 변경" aria-live="polite" hidden></div>
   <div id="vSch" role="tabpanel" aria-labelledby="tabS">
   <div class="hero">
+    <div class="hero-mark" aria-hidden="true"><span class="mark-light"></span></div>
     <div class="date-heading">
       <h1><time id="today"><span class="date-month" id="dateMonth"></span><span class="date-line"><span id="dateDay"></span><span class="date-weekday" id="dateWeekday"></span></span></time></h1>
       <button class="wxb" id="wxb" aria-expanded="false" aria-controls="wxp" hidden></button>
@@ -274,7 +291,12 @@ body:has(#actions:not([hidden])) #toast{display:none}
     <div class="wxp" id="wxp" hidden></div>
   </div>
   <div id="stale" class="warn" hidden></div>
-  <form class="add" id="saddf"><input id="sadd" placeholder="예: 10/20 14:30 미팅 #업무" autocomplete="off" enterkeyhint="send" aria-label="일정 추가"><button>추가</button></form>
+  <form class="add" id="saddf">
+    <input id="sadd" placeholder="예: 내일 3시 미팅" autocomplete="off" enterkeyhint="send" aria-label="일정 추가" aria-describedby="svoiceState">
+    <button type="button" class="voice" id="svoice" aria-label="음성으로 일정 입력" aria-pressed="false" aria-controls="sadd" aria-describedby="svoiceState"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><g class="voice-mic"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M9 22h6"/></g><rect class="voice-stop" x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></svg></button>
+    <button type="submit">추가</button>
+    <span class="voice-state" id="svoiceState" role="status" aria-live="polite" aria-atomic="true" hidden></span>
+  </form>
   <div id="spend" class="pending" hidden></div>
   <div class="schedule-tools">
     <div class="modes" role="tablist" aria-label="일정 보기" id="scheduleModes">
@@ -311,7 +333,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
   </div>
   <div id="vMemo" role="tabpanel" aria-labelledby="tabM" hidden>
     <div class="mh"><h1>메모장</h1><span class="sub" id="msub"></span></div>
-    <form class="add" id="maddf"><label for="madd">기억할 내용 추가</label><input id="madd" placeholder="예: 우유 사기" autocomplete="off" enterkeyhint="send" aria-describedby="maddhint"><button>추가</button><span class="entry-hint" id="maddhint">알림이 필요하면 날짜와 시간을 함께 적으세요. 예: 10/24 아빠 생신 [09:00]</span></form>
+    <form class="add" id="maddf"><label for="madd">기억할 내용 추가</label><input id="madd" placeholder="예: 우유 사기" autocomplete="off" enterkeyhint="send" aria-describedby="maddhint"><button type="submit">추가</button><span class="entry-hint" id="maddhint">알림이 필요하면 날짜와 시간을 함께 적으세요. 예: 10/24 아빠 생신 [09:00]</span></form>
     <div id="mpend" class="pending" hidden></div>
     <div class="card"><h2>다가오는 메모</h2><ul id="ml1"></ul></div>
     <div class="card"><h2>메모</h2><ul id="ml2"></ul></div>
@@ -496,14 +518,63 @@ function pendAdds(){
   for(let i=adds.length-1;i>=0;i--)if(Date.now()-adds[i].ts>6e5||all.some(t=>t.includes(core(adds[i].text))))adds.splice(i,1);
   for(const [id,memo] of [['spend',0],['mpend',1]]){const xs=adds.filter(x=>x.memo===memo);$(id).hidden=!xs.length;$(id).innerHTML=xs.map(x=>`<div>⏳ 보냄 · 곧 반영돼요: ${esc(x.text)}</div>`).join('')}
 }
+let voice=null;
+function voiceMessage(message='',error=false){$('svoiceState').textContent=message;$('svoiceState').hidden=!message;$('svoiceState').classList.toggle('error',error)}
+function entryControls(form){
+  const sending=form.dataset.sending==='true';
+  form.querySelector('button[type=submit]').disabled=sending||(form.id==='saddf'&&!!voice);
+  if(form.id==='saddf')$('svoice').disabled=sending||!!voice?.stopping;
+}
+function finishVoice(session,message='',error=false){
+  if(voice!==session)return;
+  clearTimeout(session.timer);voice=null;
+  $('svoice').setAttribute('aria-pressed','false');$('svoice').setAttribute('aria-label','음성으로 일정 입력');
+  voiceMessage(message,error);entryControls($('saddf'));
+}
+function cancelVoice(){const session=voice;if(!session)return;finishVoice(session);try{session.rec.abort()}catch(_){}}
+function stopVoice(){
+  const session=voice;if(!session||session.stopping)return;
+  session.stopping=true;clearTimeout(session.timer);entryControls($('saddf'));voiceMessage('음성을 텍스트로 바꾸는 중…');
+  session.timer=setTimeout(()=>{if(voice!==session)return;finishVoice(session,'인식을 마쳤어요. 입력된 내용을 확인해 주세요.');try{session.rec.abort()}catch(_){}},5000);
+  try{session.rec.stop()}catch(_){cancelVoice()}
+}
+$('svoice').onclick=()=>{
+  if(voice)return stopVoice();
+  if(!key||!data||$('saddf').dataset.sending==='true')return;
+  const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!Recognition)return voiceMessage('이 브라우저는 음성 인식을 지원하지 않아요. 키보드의 마이크를 이용해 주세요.',true);
+  let session;
+  try{
+    const rec=new Recognition();session={rec,key,prefix:$('sadd').value.trimEnd(),heard:false};voice=session;
+    rec.lang='ko-KR';rec.interimResults=true;rec.continuous=false;rec.maxAlternatives=1;
+    $('sadd').blur();$('svoice').setAttribute('aria-pressed','true');$('svoice').setAttribute('aria-label','음성 입력 마치기');
+    voiceMessage('마이크를 켜는 중…');entryControls($('saddf'));
+    rec.onstart=()=>{if(voice===session)voiceMessage('듣는 중… 다시 누르면 마쳐요.')};
+    rec.onresult=e=>{
+      if(voice!==session||key!==session.key)return;
+      const text=Array.from(e.results,result=>result[0].transcript).join(' ').trim();session.heard=!!text;
+      $('sadd').value=[session.prefix,text].filter(Boolean).join(' ');
+    };
+    rec.onend=()=>finishVoice(session,session.heard?'':'음성이 들리지 않았어요. 마이크를 눌러 다시 말해 주세요.');
+    rec.onerror=e=>{
+      if(voice!==session)return;
+      const messages={'not-allowed':'마이크 권한이 필요해요. 브라우저의 사이트 설정에서 마이크를 허용해 주세요.','service-not-allowed':'음성 인식을 사용할 수 없어요. 브라우저 설정을 확인해 주세요.','audio-capture':'마이크를 사용할 수 없어요. 연결과 권한을 확인해 주세요.','no-speech':'음성이 들리지 않았어요. 마이크를 눌러 다시 말해 주세요.','network':'음성 인식 연결이 끊겼어요. 인터넷 연결을 확인한 뒤 다시 눌러 주세요.'};
+      finishVoice(session,messages[e.error]||'음성 인식을 마치지 못했어요. 입력한 내용은 남겨 두었어요.',true);
+      try{rec.abort()}catch(_){}
+    };
+    session.timer=setTimeout(stopVoice,60000);rec.start();
+  }catch(_){if(session){finishVoice(session,'마이크를 시작하지 못했어요. 권한을 확인한 뒤 다시 눌러 주세요.',true);try{session.rec.abort()}catch(_){}}else voiceMessage('이 브라우저에서 마이크를 시작할 수 없어요.',true)}
+};
+$('sadd').addEventListener('input',cancelVoice);
+addEventListener('pagehide',cancelVoice);
 for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=async e=>{
   e.preventDefault();const input=$(inp).value;let text=input.trim();if(!text)return;
   if(!(data.done&&data.done.topic))return toast('웹에서 보낼 열쇠가 아직 없어요. 텔레그램에서 해 주세요',6000);
   if(memo&&!/#메모/.test(text))text='#메모 '+text;
-  const btn=$(f).querySelector('button');if(btn.disabled)return;const sessionKey=key;btn.disabled=true;btn.textContent='보내는 중';
+  const form=$(f),btn=form.querySelector('button[type=submit]');if(btn.disabled)return;const sessionKey=key;form.dataset.sending='true';entryControls(form);btn.textContent='보내는 중';
   try{await sendAct('add',{text});if(key!==sessionKey)return;if($(inp).value===input)$(inp).value='';adds.push({text,memo,ts:Date.now()});pendAdds();toast('보냈어요 · 1분쯤 뒤 반영돼요(결과는 텔레그램에도 와요)',5000);setTimeout(reload,7e4)}
   catch(_){if(key===sessionKey)toast('보내지 못했어요. 입력한 내용은 남겨 두었어요',8000)}
-  finally{btn.disabled=false;btn.textContent='추가'}
+  finally{form.dataset.sending='false';entryControls(form);btn.textContent='추가'}
 };
 let editing=null,editTimer;
 const editFind=id=>[...data.items,...(data.memos||[]),...data.rules].find(x=>x.id===id&&x.edit);
@@ -512,6 +583,7 @@ $('editWeek').innerHTML=[...'월화수목금토일'].map((d,i)=>`<option value="
 function editMessage(message,error=false){$('editState').textContent=message;$('editState').classList.toggle('error',error)}
 function editBusy(busy){editing.busy=busy;$('editFields').disabled=busy;$('editSave').disabled=busy;$('editSave').textContent=busy?'반영 확인 중':'저장';actionStatus()}
 function openEdit(id,fresh=false){
+  cancelVoice();
   if(!data)return;
   if(editing?.command&&(editing.busy||editing.id!==id)){if(!$('editor').open)$('editor').showModal();return}
   if(!editing||editing.id!==id||fresh){
@@ -627,6 +699,7 @@ function memoView(){
 }
 function view(){   // 주소 끝 #memo = 메모장, #search = 검색(휴대폰 뒤로가기로 일정으로 돌아온다)
   const h=location.hash,m=h==='#memo',q=h==='#search';
+  if(m||q)cancelVoice();
   $('vSch').hidden=m||q;$('vMemo').hidden=!m;$('vSearch').hidden=!q;
   for(const [id,on] of [['tabS',!m&&!q],['tabM',m],['tabQ',q]]){$(id).classList.toggle('on',on);$(id).setAttribute('aria-selected',String(on));$(id).tabIndex=on?0:-1}
   window.scrollTo(0,0);
@@ -758,7 +831,7 @@ $('prev').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new
 $('next').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m,1))).slice(0,7);calendar()};
 
 function showApp(remembered){$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();loadWeather();pushState().catch(()=>{});for(const k of queued.keys())scheduleAction(k);saveQueued();if(interrupted){interrupted=false;toast('전송 중 끊긴 변경이 있어요. 일정에 반영됐는지 확인해 주세요',8000)}}
-function showLock(msg){resetEditor();$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
+function showLock(msg){cancelVoice();voiceMessage();resetEditor();$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
 
 $('f').onsubmit=async e=>{
   e.preventDefault();$('go').disabled=true;$('go').textContent='확인 중…';$('err').textContent='';
@@ -779,7 +852,7 @@ async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용�
 setInterval(()=>{const t=kstToday();if(t!==T&&data){T=t;viewYM=t.slice(0,7);sel=t;weekStart=mondayOf(t);render()}},60e3);
 setInterval(()=>{if(key)loadWeather()},18e5);   // 날씨는 30분마다
 setInterval(reload,300e3);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)reload()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelVoice();else reload()});
 
 (async()=>{
   try{

@@ -1,7 +1,7 @@
 {
-  "name": "CG 일정관리",
-  "short_name": "CG 일정",
-  "description": "CGPORTFOLIO · 나의 일정과 메모",
+  "name": "CG PLANER",
+  "short_name": "CG PLANER",
+  "description": "CG PLANER · 나의 일정과 메모",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",
