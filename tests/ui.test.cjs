@@ -23,6 +23,11 @@ const fixture = {
   rules: [{id: 7, label: '매주 금요일 업무 회고', c: '업무'}],
   memos: [{id: 8, text: '읽고 싶은 책 기록하기', c: '개인'}]
 };
+fixture.edit = 1;
+fixture.edit_results = [];
+for (const item of fixture.items.filter(x => !x.done)) item.edit = {rev: 'a'.repeat(64), kind: 'once', date: item.date, memo: false};
+Object.assign(fixture.rules[0], {text: '업무 회고', t: '', edit: {rev: 'b'.repeat(64), kind: 'weekly', wd: 4, memo: false}});
+fixture.memos[0].edit = {rev: 'c'.repeat(64), kind: 'note', memo: true};
 const weatherFixture = {
   current: {time: today + 'T09:00', temperature_2m: 18.4, apparent_temperature: 17.8, weather_code: 1},
   hourly: {
@@ -37,9 +42,10 @@ const weatherFixture = {
 };
 let browser;
 const base = 'https://schedule.test';
+const fixtureSalt = webcrypto.getRandomValues(new Uint8Array(16)); // The publisher keeps its salt across refreshes.
 
 async function encryptFixture(payload) {
-  const salt = webcrypto.getRandomValues(new Uint8Array(16));
+  const salt = fixtureSalt;
   const iv = webcrypto.getRandomValues(new Uint8Array(12));
   const material = await webcrypto.subtle.importKey('raw', new TextEncoder().encode('preview'), 'PBKDF2', false, ['deriveKey']);
   const key = await webcrypto.subtle.deriveKey({name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 1000}, material, {name: 'AES-GCM', length: 256}, false, ['encrypt']);
@@ -54,7 +60,7 @@ before(async () => {
 after(async () => {await browser?.close()});
 
 async function open(t, options = {}, weather = {}) {
-  const blob = await encryptFixture(weather.configured === false ? {...fixture, wx: null} : fixture);
+  const blob = await encryptFixture(weather.payload || (weather.configured === false ? {...fixture, wx: null} : fixture));
   const context = await browser.newContext({viewport: {width: 390, height: 844}, colorScheme: 'light', serviceWorkers: 'block', ...options});
   t.after(() => context.close());
   const requests = [], errors = [];
@@ -97,6 +103,211 @@ test('CG branding loads locally on the lock screen and app in both themes', asyn
   await lockLogo.waitFor({state: 'visible'});
   assert.equal(await lockLogo.evaluate(img => img.complete && img.naturalWidth > 0), true);
   assert.equal(requests.some(request => request.url().includes('tailab9ee1.ts.net')), false, 'the brand must work without the private portfolio server');
+});
+
+test('editing sends a signed field patch and waits for the actual saved result', async t => {
+  const {page, requests} = await open(t);
+  assert.equal(await page.locator('#tl .ed[data-id="1"]').count(), 1, 'the task title opens the editor');
+  await page.locator('#tl .ed[data-id="1"]').click();
+  assert.equal(await page.locator('#editor').isVisible(), true);
+  await page.locator('#editText').fill('수정한 검토 미팅');
+  await page.locator('#editDate').fill(day(1));
+  await page.locator('#editTime').fill('11:30');
+  await page.locator('#editCat').selectOption('개인');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editSave').disabled);
+  const body = requests.find(r => r.url().includes('ntfy.sh')).postDataJSON();
+  assert.equal(body.a, 'edit');
+  assert.equal(body.id, 1);
+  const command = JSON.parse(body.text);
+  assert.equal(command.rev, fixture.items[0].edit.rev);
+  assert.deepEqual(command.changes, {text: '수정한 검토 미팅', date: day(1), time: '11:30', cat: '개인'});
+  const {createHmac} = require('node:crypto');
+  assert.equal(body.sig, createHmac('sha256', fixture.done.key).update(`edit|1|${body.text}|${body.ts}`).digest('hex'));
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영'));
+  assert.match(await page.locator('#editState').innerText(), /반영/);
+  assert.match(await page.locator('#tl').innerText(), /주간 업무 계획 정리/, 'transport acceptance is not a saved result');
+  await page.locator('#editClose').click();
+  assert.equal(await page.locator('#actions .edit-resume').count(), 1, 'the pending edit remains discoverable after closing its sheet');
+  await page.locator('#actions .edit-resume').click();
+  assert.equal(await page.locator('#editor').isVisible(), true);
+  const updated = structuredClone(fixture);
+  Object.assign(updated.items[0], {text: command.changes.text, date: day(1), t: '11:30', c: '개인'});
+  updated.edit_results = [{rid: command.rid, id: 1, ok: true, message: '수정했어요.'}];
+  const blob = await encryptFixture(updated);
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.evaluate(() => reload());
+  assert.equal(await page.locator('#editor').isVisible(), false);
+  assert.match(await page.locator('#nl').innerText(), /수정한 검토 미팅/);
+  assert.equal(await page.locator('#tl .ed[data-id="1"]').count(), 0);
+  const stored = await page.evaluate(() => JSON.stringify({...localStorage, ...sessionStorage}));
+  assert.equal(stored.includes(command.changes.text), false, 'private edit text is not stored unencrypted');
+});
+
+test('closing the editor preserves its draft and a rejected edit keeps the input', async t => {
+  const {page, requests} = await open(t);
+  assert.equal(await page.locator('#tl .ed[data-id="1"]').count(), 1);
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('남겨 둘 수정 내용');
+  await page.keyboard.press('Escape');
+  await page.locator('#tl .ed[data-id="1"]').click();
+  assert.equal(await page.locator('#editText').inputValue(), '남겨 둘 수정 내용');
+  await page.locator('#editSave').click();
+  const command = JSON.parse(requests.find(r => r.url().includes('ntfy.sh')).postDataJSON().text);
+  const updated = structuredClone(fixture);
+  updated.items[0].text = '다른 곳에서 바꾼 내용';
+  updated.items[0].edit.rev = 'd'.repeat(64);
+  updated.edit_results = [{rid: command.rid, id: 1, ok: false, code: 'conflict', message: '다른 곳에서 먼저 바뀐 일정이에요.'}];
+  const blob = await encryptFixture(updated);
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.evaluate(() => reload());
+  assert.equal(await page.locator('#editor').isVisible(), true);
+  assert.equal(await page.locator('#editText').inputValue(), '남겨 둘 수정 내용');
+  assert.match(await page.locator('#editState').innerText(), /바뀐/);
+  await page.locator('#editLatest').click();
+  await page.waitForFunction(() => document.getElementById('editText').value === '다른 곳에서 바꾼 내용');
+  assert.equal(await page.locator('#editText').inputValue(), '다른 곳에서 바꾼 내용');
+});
+
+test('browser edits round-trip through the installed bot without changing real data', {skip: !process.env.SCHEDULE_BOT_DIR}, async t => {
+  const {execFileSync} = require('node:child_process');
+  const bridge = input => JSON.parse(execFileSync('python', [join(__dirname, 'edit_bridge.py')], {input: JSON.stringify({...input, today}), encoding: 'utf8', env: {...process.env, PYTHONIOENCODING: 'utf-8'}}));
+  const db = {next_id: 2, items: [{id: 1, kind: 'once', date: today, time: '09:30', text: '테스트상사 미팅', cat: '미팅', added: day(-1)}]};
+  const initial = bridge({db});
+  const payload = {...initial.payload, wx: fixture.wx, done: fixture.done, updated: fixture.updated};
+  const {page, requests} = await open(t, {}, {payload});
+  await page.locator('#tl .ed').click();
+  assert.equal(await page.locator('#editText').inputValue(), 'T사 미팅');
+  await page.locator('#editText').fill('T사 계약 검토');
+  await page.locator('#editDate').fill(day(1));
+  await page.locator('#editTime').fill('11:00');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영'));
+  const body = requests.find(r => r.url().includes('ntfy.sh')).postDataJSON();
+  const saved = bridge({db: initial.db, body});
+  assert.equal(saved.db.items[0].id, 1);
+  assert.equal(saved.db.items[0].text, '테스트상사 계약 검토');
+  assert.equal(saved.db.items[0].date, day(1));
+  const blob = await encryptFixture({...payload, ...saved.payload});
+  await page.context().route('**/data.enc.json?*', route => route.fulfill({contentType: 'application/json', body: blob}));
+  await page.evaluate(() => reload());
+  assert.equal(await page.locator('#editor').isVisible(), false);
+  assert.match(await page.locator('#nl').innerText(), /T사 계약 검토/);
+});
+
+test('a failed edit keeps its draft and retry reuses the same request identity', async t => {
+  const {page, requests} = await open(t);
+  await page.context().route('https://ntfy.sh/**', route => route.fulfill({status: 503, body: ''}));
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('실패해도 남길 내용');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => !document.getElementById('editSave').disabled);
+  assert.equal(await page.locator('#editText').inputValue(), '실패해도 남길 내용');
+  assert.match(await page.locator('#editState').innerText(), /확인하지 못/);
+  const first = JSON.parse(requests.find(r => r.url().includes('ntfy.sh')).postDataJSON().text);
+  await page.context().route('https://ntfy.sh/**', route => route.fulfill({status: 200, body: '{}'}));
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영'));
+  await page.locator('#editForm').evaluate(form => form.requestSubmit());
+  const sent = requests.filter(r => r.url().includes('ntfy.sh')).map(r => JSON.parse(r.postDataJSON().text));
+  assert.equal(sent.length, 2, 'submitting again while waiting does not send another request');
+  assert.equal(sent[1].rid, first.rid, 'ambiguous delivery can be retried safely');
+});
+
+test('an unconfirmed edit releases the form without losing its draft or retry identity', async t => {
+  const {page, requests} = await open(t);
+  await page.clock.install();
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('확인이 늦어도 남길 내용');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영'));
+  await page.clock.fastForward(121000);
+  await page.waitForFunction(() => !document.getElementById('editSave').disabled);
+  assert.equal(await page.locator('#editText').inputValue(), '확인이 늦어도 남길 내용');
+  assert.match(await page.locator('#editState').innerText(), /아직 반영/);
+  const first = JSON.parse(requests.find(r => r.url().includes('ntfy.sh')).postDataJSON().text);
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영 결과'));
+  const sent = requests.filter(r => r.url().includes('ntfy.sh')).map(r => JSON.parse(r.postDataJSON().text));
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].rid, first.rid);
+});
+
+test('forgetting the device clears the editor and ignores a late data refresh', async t => {
+  const {page} = await open(t);
+  await page.reload();
+  await page.locator('#pw').fill('preview');
+  await page.locator('#rem').check();
+  await page.locator('#go').click();
+  await page.locator('#app').waitFor({state: 'visible'});
+  await page.locator('#tl .ed[data-id="1"]').click();
+  await page.locator('#editText').fill('기억 해제 때 지워야 할 내용');
+  await page.locator('#editClose').click();
+  let release;
+  const held = new Promise(resolve => {release = resolve});
+  t.after(() => release());
+  const blob = await encryptFixture(fixture);
+  await page.context().route('**/data.enc.json?*', async route => {await held; await route.fulfill({contentType: 'application/json', body: blob})});
+  const loading = page.waitForRequest('**/data.enc.json?*');
+  await page.evaluate(() => {window.refreshForTest = reload()});
+  await loading;
+  await page.locator('#forget').focus();
+  await page.keyboard.press('Enter');
+  release();
+  await page.evaluate(() => window.refreshForTest);
+  assert.equal(await page.locator('#lock').isVisible(), true);
+  assert.equal(await page.locator('#editor').isVisible(), false);
+  assert.equal(await page.locator('#editText').inputValue(), '');
+  assert.equal(await page.evaluate(() => data === null), true, 'old decryption cannot restore data after logout');
+});
+
+test('recurring and memo editors expose their real scheduling fields', async t => {
+  const {page, requests} = await open(t);
+  await page.locator('.focus-aside details summary').click();
+  await page.locator('#rl .ed').click();
+  assert.equal(await page.locator('#editDate').isVisible(), false);
+  assert.equal(await page.locator('#editWeek').inputValue(), '4');
+  await page.locator('#editWeek').selectOption('0');
+  await page.locator('#editTime').fill('08:00');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(() => document.getElementById('editState').textContent.includes('반영'));
+  const command = JSON.parse(requests.find(r => r.url().includes('ntfy.sh')).postDataJSON().text);
+  assert.deepEqual(command.changes, {time: '08:00', wd: 0});
+
+  const other = await open(t);
+  await other.page.locator('#tabM').click();
+  await other.page.locator('#ml2 .ed').click();
+  await other.page.locator('#editDate').fill(day(1));
+  await other.page.locator('#editTime').fill('09:00');
+  await other.page.locator('#editClearDate').click();
+  assert.equal(await other.page.locator('#editDate').inputValue(), '');
+  assert.equal(await other.page.locator('#editTime').inputValue(), '');
+  await other.page.locator('#editSave').click();
+  assert.equal(await other.page.locator('#editor').isVisible(), false, 'saving an unchanged memo sends nothing');
+  assert.equal(other.requests.some(r => r.url().includes('ntfy.sh')), false);
+});
+
+test('the edit sheet fits short phones, keeps focus inside and supports dark mode', async t => {
+  const {page} = await open(t, {isMobile: true, hasTouch: true});
+  await page.locator('#tl .ed[data-id="1"]').tap();
+  for (const viewport of [{width: 320, height: 568}, {width: 390, height: 360}, {width: 844, height: 390}, {width: 1280, height: 900}]) {
+    await page.setViewportSize(viewport);
+    const dialog = await page.locator('#editor').boundingBox();
+    assert.ok(dialog.x >= 0 && dialog.x + dialog.width <= viewport.width && dialog.y >= 0 && dialog.y + dialog.height <= viewport.height, `editor fits ${viewport.width}x${viewport.height}`);
+    assert.equal(await page.locator('#editor').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await page.locator('#editSave').focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await page.locator('#editor').evaluate(el => el.contains(document.activeElement)), true, 'Tab stays inside the dialog');
+    const save = await page.locator('#editSave').boundingBox();
+    assert.ok(save.height >= 44 && save.y + save.height <= viewport.height, 'save remains above the keyboard-sized viewport');
+  }
+  if (process.env.UI_SCREENSHOTS) {
+    await page.setViewportSize({width: 390, height: 844});
+    await page.emulateMedia({colorScheme: 'light'});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-editor.png')});
+    await page.emulateMedia({colorScheme: 'dark'});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-editor-dark.png')});
+  }
 });
 
 test('mobile starts with actionable tasks and switches schedule views without losing filters', async t => {
@@ -228,7 +439,7 @@ test('each pending action can be undone even after another action is queued', as
   assert.equal(await page.locator('.hero').evaluate(el => el.getBoundingClientRect().top + scrollY), headerY, 'action feedback does not shift the page header');
   const firstUndo = page.locator('#actions .undo[data-k="1|' + today + '"]');
   assert.equal(await firstUndo.count(), 1, 'first action keeps its own undo control');
-  if(process.env.UI_SCREENSHOTS) await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'pending-actions.png')});
+  if(process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'pending-actions.png')});
   await firstUndo.click();
   assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1);
   await page.clock.runFor(5500);
@@ -389,27 +600,27 @@ test('phone, desktop and dark mode fit the viewport with usable controls', async
     const {mkdir} = require('node:fs/promises');
     await mkdir(process.env.UI_SCREENSHOTS, {recursive: true});
     await page.emulateMedia({colorScheme: 'dark'});
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'desktop-dark.png'), fullPage: true});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'desktop-dark.png'), fullPage: true});
     await page.emulateMedia({colorScheme: 'light'});
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'desktop-light.png'), fullPage: true});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'desktop-light.png'), fullPage: true});
     await page.setViewportSize({width: 390, height: 844});
     await page.emulateMedia({colorScheme: 'dark'});
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-dark.png')});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-dark.png')});
     await page.emulateMedia({colorScheme: 'light'});
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-light.png')});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-light.png')});
     await page.locator('#wxb').click();
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-weather.png')});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-weather.png')});
     await page.locator('#wxb').click();
     await page.getByRole('tab', {name: '주간', exact: true}).click();
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-week.png')});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-week.png')});
     await page.getByRole('tab', {name: '월간', exact: true}).click();
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-month.png')});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-month.png')});
     await page.locator('#tabM').click();
     await page.locator('#ml2').waitFor({state: 'visible'});
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-memo.png')});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-memo.png')});
     await page.locator('#tabQ').click();
     await page.locator('#qin').fill('업무');
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-search.png')});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-search.png')});
   }
 });
 
@@ -434,7 +645,7 @@ test('landscape phones keep the bottom navigation and fit every screen', async t
   const nav = await page.locator('.tabs').boundingBox();
   assert.ok(nav.y > 300 && nav.y + nav.height <= 390, 'phone navigation remains at the bottom in landscape');
   const firstTask = await page.locator('#tl .dn').first().boundingBox();
-  if (process.env.UI_SCREENSHOTS) await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-landscape.png')});
+  if (process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-landscape.png')});
   assert.ok(firstTask.y + firstTask.height <= nav.y, `first task ends at ${firstTask.y + firstTask.height}, above navigation at ${nav.y} in landscape`);
   for (const tab of ['tabM', 'tabQ', 'tabS']) {
     await page.locator('#' + tab).tap();
@@ -444,14 +655,14 @@ test('landscape phones keep the bottom navigation and fit every screen', async t
   }
   if (process.env.UI_SCREENSHOTS) {
     await page.locator('#today').tap();
-    await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-landscape.png')});
+    await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-landscape.png')});
   }
 });
 
 test('short portrait phones show the first task before scrolling', async t => {
   const {page} = await open(t, {isMobile: true, hasTouch: true, viewport: {width: 320, height: 568}});
   const firstTask = await page.locator('#tl .dn').first().boundingBox(), nav = await page.locator('.tabs').boundingBox();
-  if (process.env.UI_SCREENSHOTS) await page.screenshot({path: join(process.env.UI_SCREENSHOTS, 'mobile-small.png')});
+  if (process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-small.png')});
   assert.ok(firstTask.y + firstTask.height <= nav.y, `first task ends at ${firstTask.y + firstTask.height}, above navigation at ${nav.y} on a small phone`);
 });
 

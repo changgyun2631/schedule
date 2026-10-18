@@ -1,0 +1,35 @@
+--- publish.py
++++ publish.py
+@@ -12,6 +12,7 @@
+ import base64, datetime as dt, hashlib, json, os, re, shutil, subprocess, sys, threading
+ 
+ import bot
++import web_edit
+ 
+ HERE = os.path.dirname(os.path.abspath(__file__))
+ SITE = os.path.join(os.path.expanduser('~'), 'Desktop', '일정관리')
+@@ -61,6 +62,7 @@
+         if not bot.is_open(it):
+             continue
+         done_until = it.get('done_until') or ''
++        edit = web_edit.edit_spec(it, table)
+         days = [start + dt.timedelta(k) for k in range((end - start).days + 1)]
+         if it['kind'] == 'once' and not done_until and not bot.is_memo(it) and dt.date.fromisoformat(it['date']) < start:
+             days.append(dt.date.fromisoformat(it['date']))        # 오래 밀린 한 번짜리도 보인다
+@@ -71,12 +73,12 @@
+                         'c': bot.cat_of(it), 't': it.get('time') or '', 'memo': int(bot.is_memo(it)),
+                         'ev': int(bool(it.get('event'))), 'early': int(bool(bot.early(it, d))),
+                         'done': int(done_until >= (it['date'] if it['kind'] == 'once' else d.isoformat()) if done_until else 0),
+-                        'added': it.get('added') or ''})
+-    rules = [{'id': i['id'], 'label': mask(bot.label(i), table), 'c': bot.cat_of(i)} for i in db['items'] if bot.is_open(i) and i['kind'] in ('monthly', 'weekly')]
++                        'added': it.get('added') or '', 'edit': edit})
++    rules = [{'id': i['id'], 'label': mask(bot.label(i), table), 'c': bot.cat_of(i), 'text': mask(i['text'], table), 't': i.get('time') or '', 'edit': web_edit.edit_spec(i, table)} for i in db['items'] if bot.is_open(i) and i['kind'] in ('monthly', 'weekly')]
+     memos = [{'id': i['id'], 'date': i.get('date', ''), 't': i.get('time') or '', 'text': mask(i['text'], table), 'c': bot.cat_of(i),
+-              'k': i['kind'][0], 'added': i.get('added') or ''}
++              'k': i['kind'][0], 'added': i.get('added') or '', 'edit': web_edit.edit_spec(i, table)}
+              for i in db['items'] if bot.is_memo(i)]                  # 메모장 탭: 날짜 범위와 상관없이 전부
+-    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos}
++    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos, 'edit': 1, 'edit_results': db.get('web_edits', [])}
+ 
+ 
+ def derive(pw, salt):

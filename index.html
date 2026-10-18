@@ -23,7 +23,7 @@ main{max-width:1120px;margin:0 auto;padding:28px 32px 48px}
 h1{font-size:28px;line-height:1.35;letter-spacing:-.045em;margin:0}
 h2{font-size:17px;margin:0 0 16px;display:flex;align-items:center;gap:8px;line-height:1.5}
 button,input{font:inherit;color:inherit}
-button{cursor:pointer;touch-action:manipulation}
+button{cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 button:disabled{cursor:default}
 button:active:not(:disabled){opacity:.75}
 :focus-visible{outline:3px solid var(--acc);outline-offset:2px}
@@ -46,6 +46,23 @@ ul{list-style:none;margin:0;padding:0}
 .row:first-child{border-top:0;padding-top:0}.row:last-child{padding-bottom:0}
 .id{color:var(--mut);font-size:12px;white-space:nowrap}
 .tx{font-size:16px;font-weight:500;line-height:1.6;overflow-wrap:anywhere}
+.ed{display:block;width:100%;min-width:0;min-height:44px;text-align:left;padding:0;border:0;background:transparent;line-height:inherit}
+.ed .tx{display:block;position:relative;padding-right:20px}.edit-icon{position:absolute;right:0;top:6px;width:14px;height:14px;color:var(--mut)}
+.editor{width:480px;max-width:calc(100% - 32px);padding:0;border:1px solid var(--ln);border-radius:24px;color:var(--tx);background:var(--card);box-shadow:var(--nav-shadow)}
+.editor::backdrop{background:#071f2bcc}
+.edit-form{display:flex;flex-direction:column;max-height:calc(100dvh - 48px)}
+.edit-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 24px;border-bottom:1px solid var(--ln)}
+.edit-head h2{margin:0}.edit-close,.edit-clear{flex:none;min-width:44px;min-height:44px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);font-size:20px}
+.edit-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;border:0;margin:0;padding:20px 24px;overflow:auto;min-height:0}
+.edit-fields label{display:flex;flex-direction:column;gap:8px;min-width:0;font-size:14px;font-weight:600}
+.edit-wide{grid-column:1/-1}
+.edit-fields input,.edit-fields select,.edit-fields textarea{width:100%;min-width:0;min-height:48px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);padding:10px 12px;font:16px/1.5 var(--font-body);color:var(--tx)}
+.edit-fields textarea{resize:vertical;min-height:80px;max-height:200px}.edit-fields:disabled{opacity:.65}
+.edit-control{display:flex;gap:8px;min-width:0}.edit-clear:disabled{opacity:.4}
+.edit-note{font-size:13px;color:var(--mut);font-weight:400;margin:0}
+.edit-foot{padding:12px 24px 24px;border-top:1px solid var(--ln)}
+.edit-state{font-size:14px;margin:0 0 12px;overflow-wrap:anywhere}.edit-state:empty{display:none}.edit-state.error{color:var(--red)}
+.edit-latest{border:1px solid var(--ln);border-radius:10px;background:var(--bg);min-height:44px;padding:0 12px;margin-bottom:12px;font-size:14px}
 .mt{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;color:var(--mut);font-size:12px;margin-top:6px}
 .done .tx{color:var(--mut);text-decoration:line-through}
 .empty{color:var(--mut);padding:16px 0;font-size:14px}
@@ -163,6 +180,7 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .action-status{position:fixed;z-index:21;left:16px;right:16px;bottom:24px;max-width:600px;max-height:35vh;overflow:auto;margin:0 auto;padding:8px 12px;background:var(--card);border:1px solid var(--ln);border-radius:10px;font-size:13px;color:var(--mut);box-shadow:0 4px 16px #0002}
 .action-status>div{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
 .action-status .undo{margin-left:0;flex:none;color:var(--acc)}
+.edit-resume{flex:none;min-height:44px;border:1px solid var(--ln);border-radius:8px;background:transparent;color:var(--acc);padding:0 12px;font-size:13px}
 html:has(#actions:not([hidden])){scroll-padding-bottom:calc(35vh + 100px + env(safe-area-inset-bottom))}
 main:has(#actions:not([hidden])){padding-bottom:calc(35vh + 100px + env(safe-area-inset-bottom))}
 body:has(#actions:not([hidden])) #toast{display:none}
@@ -189,6 +207,8 @@ body:has(#actions:not([hidden])) #toast{display:none}
   .add{padding:8px;gap:4px}.add button{padding:0 16px}.add input{padding:10px 8px;font-size:16px}.entry-hint{font-size:12px}
   .row{gap:12px;padding:14px 0}.tx{font-size:16px;word-break:keep-all}.wdh{font-size:12px}.wk .wd{grid-template-columns:3.8em minmax(0,1fr)}
   .btns{gap:8px;max-width:112px}
+  .editor{width:100%;max-width:100%;max-height:calc(100dvh - env(safe-area-inset-top) - 12px);margin:0;inset:auto 0 0;border-radius:24px 24px 0 0}
+  .edit-form{max-height:calc(100dvh - env(safe-area-inset-top) - 12px)}.edit-head{padding:12px 20px}.edit-fields{padding:16px 20px}.edit-foot{padding:12px 20px calc(16px + env(safe-area-inset-bottom))}
   .cal-h b{min-width:0;text-align:center;font-size:16px;line-height:1.5}
   .dr{grid-template-columns:2.2em 1.4em minmax(0,1fr);gap:4px}.dr>span:last-child{grid-column:2/-1;font-size:12px}
   #toast,.action-status{left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));bottom:calc(84px + env(safe-area-inset-bottom))}.lock{padding:24px;margin-top:8vh}.mh{margin-top:24px}
@@ -213,6 +233,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
   <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18m-13 5h3m3 0h2"/></symbol>
   <symbol id="i-memo" viewBox="0 0 24 24"><path d="M13 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-7M8 16l1-4L18 3l3 3-9 9-4 1Z"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="7"/><path d="m16 16 5 5"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 5 4 4M4 20l1-5L16 4a2.8 2.8 0 0 1 4 4L9 19l-5 1Z"/></symbol>
 </defs></svg>
 <main>
 <section id="lock" class="lock" hidden>
@@ -304,9 +325,24 @@ body:has(#actions:not([hidden])) #toast{display:none}
     <div class="card" id="qc2" hidden><h2>반복 일정</h2><ul id="ql2"></ul></div>
     <div class="card" id="qc3" hidden><h2>메모</h2><ul id="ql3"></ul></div>
   </div>
-  <footer class="hint">추가·완료·미루기·삭제는 여기서, 분류 변경은 텔레그램에서 할 수 있어요.<br><span id="upd"></span></footer>
+  <footer class="hint"><span id="editHelp">추가·완료·미루기·삭제는 여기서, 분류 변경은 텔레그램에서 할 수 있어요.</span><br><span id="upd"></span></footer>
   <button class="link" id="forget" hidden>이 기기 기억 해제</button>
 </section>
+<dialog id="editor" class="editor" aria-labelledby="editTitle">
+  <form id="editForm" class="edit-form">
+    <header class="edit-head"><h2 id="editTitle">일정 수정</h2><button class="edit-close" id="editClose" type="button" aria-label="수정 창 닫기">×</button></header>
+    <fieldset id="editFields" class="edit-fields">
+      <label class="edit-wide">내용<textarea id="editText" rows="2" maxlength="2000" required autofocus></textarea></label>
+      <label class="edit-wide" id="editDateWrap">날짜<span class="edit-control"><input id="editDate" type="date" min="2000-01-01" max="2100-12-31"><button id="editClearDate" class="edit-clear" type="button" aria-label="메모 날짜 지우기" hidden>×</button></span></label>
+      <label class="edit-wide" id="editDayWrap" hidden>매달 날짜<input id="editDay" type="number" min="1" max="31" inputmode="numeric"></label>
+      <label class="edit-wide" id="editWeekWrap" hidden>매주 요일<select id="editWeek"></select></label>
+      <label>시간<span class="edit-control"><input id="editTime" type="time"><button id="editClearTime" class="edit-clear" type="button" aria-label="시간 지우기">×</button></span></label>
+      <label>분류<select id="editCat"></select></label>
+      <p class="edit-note edit-wide" id="editHint" hidden></p>
+    </fieldset>
+    <footer class="edit-foot"><p id="editState" class="edit-state" role="status"></p><button id="editLatest" class="edit-latest" type="button" hidden>최신 내용 불러오기</button><button id="editSave" class="go" type="submit">저장</button></footer>
+  </form>
+</dialog>
 <div id="toast" role="status" hidden></div>
 </main>
 <script>
@@ -364,7 +400,12 @@ function row(x,opt={}){
   const del=opt.del&&!x.ev?`<button class="rm" data-id="${x.id}"${rec?' data-rec="1"':''} aria-label="#${x.id} ${rec?'반복 일정 전체 ':''}삭제">${rec?'반복 삭제':'삭제'}</button>`:'';
   const btn=done||snz||del?`<div class="btns">${done}${snz}${del}</div>`:'';
   const tm=x.t?`<b class="tm">${esc(x.t)}</b> `:'';
-  return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}${x.memo?' memo':''}"><div><div class="tx">${tm}${esc(x.text)}</div><div class="mt">${x.memo?'<span class="pill p-memo">메모</span> ':''}${pill(catOf(x))}${meta?`<span>${esc(meta)}</span>`:''}<span class="id">#${x.id}</span></div></div>${btn}</li>`;
+  return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}${x.memo?' memo':''}">${editContent(x,`${tm}${esc(x.text)}`,`${x.memo?'<span class="pill p-memo">메모</span> ':''}${pill(catOf(x))}${meta?`<span>${esc(meta)}</span>`:''}<span class="id">#${x.id}</span>`)}${btn}</li>`;
+}
+function editContent(x,text,meta=''){
+  const can=data.edit===1&&x.edit&&!dn(x)&&!gone(x.id);
+  const content=`<span class="tx">${text}${can?'<svg class="icon edit-icon" aria-hidden="true"><use href="#i-edit"/></svg>':''}</span>${meta?`<span class="mt">${meta}</span>`:''}`;
+  return can?`<button class="ed" data-id="${x.id}" aria-label="#${x.id} 수정" aria-haspopup="dialog">${content}</button>`:`<div>${content}</div>`;
 }
 function chips(){
   const present=new Set([...data.items,...data.rules].map(catOf));
@@ -404,7 +445,7 @@ addEventListener('pagehide',()=>leaving=true);
 addEventListener('pageshow',()=>leaving=false);
 function toast(html,ms){const t=$('toast');t.hidden=false;t.innerHTML=html;clearTimeout(toastTimer);if(ms)toastTimer=setTimeout(()=>t.hidden=true,ms)}
 const hex=u=>[...new Uint8Array(u)].map(b=>b.toString(16).padStart(2,'0')).join('');
-// 내 PC의 봇에게 보내는 요청: 서명 = HMAC(열쇠, 'a|id|text|ts'). a = done·snooze·del·add·sub
+// 내 PC의 봇에게 보내는 요청: 서명 = HMAC(열쇠, 'a|id|text|ts').
 async function sendAct(a,{id,text}={}){
   const {key:secret,topic}=data.done;
   const ts=Math.floor(Date.now()/1000),k=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
@@ -415,8 +456,9 @@ async function sendAct(a,{id,text}={}){
 }
 const ACT={done:['완료 처리해요','완료를','완료'],snooze:['내일로 미뤄요','미루기를','미루기'],del:['지워요','삭제를','삭제']};
 function actionStatus(){
-  $('actions').hidden=!queued.size;
-  $('actions').innerHTML=[...queued].map(([k,p])=>`<div><span>#${p.id} ${ACT[p.a][2]} ${p.state==='queued'?'대기 중':'보내는 중'}</span>${p.state==='queued'?`<button class="undo" data-k="${esc(k)}" aria-label="#${p.id} ${ACT[p.a][2]} 되돌리기">되돌리기</button>`:''}</div>`).join('');
+  const edit=editing?.busy?`<div><span>#${editing.id} 수정 반영 확인 중</span><button class="edit-resume" aria-label="#${editing.id} 수정 상태 열기">확인</button></div>`:'';
+  $('actions').hidden=!queued.size&&!edit;
+  $('actions').innerHTML=[...queued].map(([k,p])=>`<div><span>#${p.id} ${ACT[p.a][2]} ${p.state==='queued'?'대기 중':'보내는 중'}</span>${p.state==='queued'?`<button class="undo" data-k="${esc(k)}" aria-label="#${p.id} ${ACT[p.a][2]} 되돌리기">되돌리기</button>`:''}</div>`).join('')+edit;
 }
 function scheduleAction(k){
   const p=queued.get(k);if(!p||p.state!=='queued'||timers.has(k))return;
@@ -461,6 +503,78 @@ for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=
   catch(_){if(key===sessionKey)toast('보내지 못했어요. 입력한 내용은 남겨 두었어요',8000)}
   finally{btn.disabled=false;btn.textContent='추가'}
 };
+let editing=null,editTimer;
+const editFind=id=>[...data.items,...(data.memos||[]),...data.rules].find(x=>x.id===id&&x.edit);
+$('editCat').innerHTML=CATS.map(c=>`<option>${c}</option>`).join('');
+$('editWeek').innerHTML=[...'월화수목금토일'].map((d,i)=>`<option value="${i}">${d}요일</option>`).join('');
+function editMessage(message,error=false){$('editState').textContent=message;$('editState').classList.toggle('error',error)}
+function editBusy(busy){editing.busy=busy;$('editFields').disabled=busy;$('editSave').disabled=busy;$('editSave').textContent=busy?'반영 확인 중':'저장';actionStatus()}
+function openEdit(id,fresh=false){
+  if(!data)return;
+  if(editing?.busy){if(!$('editor').open)$('editor').showModal();return}
+  if(!editing||editing.id!==id||fresh){
+    const x=editFind(id);if(!x||dn(x)||gone(id))return toast('이 일정은 현재 수정할 수 없어요.',5000);
+    const spec=x.edit,repeat=['monthly','weekly'].includes(spec.kind);
+    editing={id,rev:spec.rev,spec,busy:false,base:{text:x.text,date:spec.date||'',time:x.t||'',cat:catOf(x),day:spec.day,wd:spec.wd}};
+    $('editTitle').textContent=`${repeat?'반복 일정':spec.memo?'메모':'일정'} 수정 · #${id}`;
+    for(const [field,name] of [['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd']])$(field).value=editing.base[name]??'';
+    for(const [wrap,input,show] of [['editDateWrap','editDate',!repeat],['editDayWrap','editDay',spec.kind==='monthly'],['editWeekWrap','editWeek',spec.kind==='weekly']]){$(wrap).hidden=!show;$(input).disabled=!show}
+    $('editDate').required=spec.kind==='once'&&!spec.memo;$('editDay').required=spec.kind==='monthly';
+    $('editClearDate').hidden=!spec.memo||repeat;$('editClearTime').disabled=!x.t;
+    $('editHint').hidden=!repeat&&!spec.memo;$('editHint').textContent=repeat?'반복 일정 전체에 적용됩니다. 완료 기록은 유지됩니다.':'날짜를 지우면 날짜 없는 메모가 되고 알림도 해제됩니다.';
+    $('editLatest').hidden=true;editBusy(false);editMessage('');
+  }
+  if(!$('editor').open)$('editor').showModal();
+}
+document.addEventListener('click',e=>{const b=e.target.closest('.ed');if(b)openEdit(+b.dataset.id);else if(e.target.closest('.edit-resume')&&editing)openEdit(editing.id)});
+$('editClose').onclick=()=>$('editor').close();
+$('editor').addEventListener('keydown',e=>{
+  if(e.key!=='Tab')return;
+  const stops=[...$('editor').querySelectorAll('button,input,textarea,select')].filter(el=>!el.matches(':disabled')&&el.tabIndex>=0&&el.getClientRects().length);
+  const target=e.shiftKey&&document.activeElement===stops[0]?stops.at(-1):!e.shiftKey&&document.activeElement===stops.at(-1)?stops[0]:null;
+  if(target){e.preventDefault();target.focus()}
+});
+$('editor').addEventListener('close',()=>{
+  if(!key)return;
+  const target=[...document.querySelectorAll(`.ed[data-id="${editing?.id}"]`)].find(el=>el.getClientRects().length)||document.querySelector('.tab.on');
+  target?.focus({preventScroll:true});
+});
+$('editTime').oninput=()=>{$('editClearTime').disabled=!$('editTime').value;if(editing?.spec.memo)$('editDate').required=!!$('editTime').value};
+$('editClearTime').onclick=()=>{$('editTime').value='';$('editTime').oninput()};
+$('editClearDate').onclick=()=>{$('editDate').value='';$('editTime').value='';$('editTime').oninput()};
+$('editLatest').onclick=async()=>{const current=editing;await reload();if(editing===current)openEdit(current.id,true)};
+$('editForm').onsubmit=async e=>{
+  e.preventDefault();if(!editing||editing.busy||!key)return;
+  const changes={},current=editing,sessionKey=key,repeat=['weekly','monthly'].includes(current.spec.kind);
+  const values={text:$('editText').value.trim(),...(!repeat?{date:$('editDate').value}:{}),time:$('editTime').value,cat:$('editCat').value};
+  if(!values.text){editMessage('내용을 적어 주세요.',true);$('editText').focus();return}
+  if(current.spec.kind==='monthly')values.day=+$('editDay').value;
+  if(current.spec.kind==='weekly')values.wd=+$('editWeek').value;
+  for(const [field,value] of Object.entries(values))if(value!==current.base[field])changes[field]=value;
+  if(!Object.keys(changes).length){editing=null;$('editor').close();return}
+  if(!current.command||JSON.stringify(current.command.changes)!==JSON.stringify(changes))current.command={rid:crypto.randomUUID(),rev:current.rev,changes};
+  current.requestAt=Date.now();editBusy(true);editMessage('수정 요청을 보내고 있어요.');$('editLatest').hidden=true;
+  try{
+    await sendAct('edit',{id:current.id,text:JSON.stringify(current.command)});
+    if(key!==sessionKey||editing!==current)return;
+    editMessage('수정 요청을 보냈어요. 반영 결과를 확인하고 있어요.');
+    clearTimeout(editTimer);editTimer=setTimeout(checkEdit,3000);
+  }catch(_){if(key===sessionKey&&editing===current){editBusy(false);editMessage('전송을 확인하지 못했어요. 입력은 남아 있으니 다시 시도해 주세요.',true)}}
+};
+async function checkEdit(){
+  const current=editing;if(!key||!current?.busy)return;
+  await reload();if(editing!==current||!current.busy)return;
+  if(Date.now()-current.requestAt>=120000){editBusy(false);editMessage('아직 반영을 확인하지 못했어요. PC 봇이 켜져 있는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true);return}
+  editTimer=setTimeout(checkEdit,5000);
+}
+function editResult(){
+  if(!editing?.command)return;
+  const result=(data.edit_results||[]).find(r=>r.rid===editing.command.rid&&r.id===editing.id);if(!result)return;
+  clearTimeout(editTimer);editBusy(false);editing.command=null;
+  if(result.ok){editing=null;$('editor').close();toast('수정했어요.',4000)}
+  else{editMessage(result.message||'수정되지 않았어요. 입력은 남아 있어요.',true);$('editLatest').hidden=result.code!=='conflict';if(!$('editor').open)toast(esc(result.message||'수정되지 않았어요. 다시 열어 확인해 주세요.'),8000)}
+}
+function resetEditor(){clearTimeout(editTimer);editing=null;$('editForm').reset();$('editor').close();actionStatus()}
 function list(el,items,emptyMsg,opt){el.innerHTML=items.length?items.map(x=>row(x,opt)).join(''):`<li class="empty">${emptyMsg}</li>`}
 const on=d=>data.items.filter(x=>x.date===d&&vis(x)&&!gone(x.id)).sort((a,b)=>(+dn(a))-(+dn(b))||(a.t||'99:99').localeCompare(b.t||'99:99')||a.id-b.id);   // 끝낸 건 아래, 시각 있는 것 먼저
 
@@ -487,16 +601,18 @@ function render(){
   list($('nl'),n,'내일은 비어 있어요');
   const rules=data.rules.filter(vis);
   $('rn').textContent=rules.length;
-  $('rl').innerHTML=rules.map(r=>`<li class="row"><div><div class="tx">${esc(r.label)}</div><div class="mt">${pill(catOf(r))}<span class="id">#${r.id}</span></div></div></li>`).join('');
+  $('rl').innerHTML=rules.map(r=>`<li class="row">${editContent(r,esc(r.label),`${pill(catOf(r))}<span class="id">#${r.id}</span>`)}</li>`).join('');
   weekly();
   calendar();
   memoView();
   pendAdds();
   if(location.hash==='#search')searchView();
+  $('editHelp').textContent=data.edit===1?'내용을 누르면 수정할 수 있어요. 완료·내일로는 오른쪽 버튼에서.':'추가·완료·미루기·삭제는 여기서, 분류 변경은 텔레그램에서 할 수 있어요.';
+  editResult();
 }
 function mrow(x){
   const when=x.date?`${fmt(x.date)}${x.t?' · ⏰ '+x.t:''}`:'';
-  return `<li class="row memo"><div><div class="tx">${esc(x.text)}</div><div class="mt">${when?`<span>${esc(when)}</span>`:''}${pill(catOf(x))}<span class="id">#${x.id}</span></div></div><div class="btns"><button class="rm" data-id="${x.id}" aria-label="#${x.id} 삭제">삭제</button></div></li>`;
+  return `<li class="row memo">${editContent(x,esc(x.text),`${when?`<span>${esc(when)}</span>`:''}${pill(catOf(x))}<span class="id">#${x.id}</span>`)}<div class="btns"><button class="rm" data-id="${x.id}" aria-label="#${x.id} 삭제">삭제</button></div></li>`;
 }
 function list2(id,xs,empty){$(id).innerHTML=xs.length?xs.map(mrow).join(''):`<li class="empty">${empty}</li>`}
 function memoView(){
@@ -549,7 +665,7 @@ function searchView(){
   const rules=data.rules.filter(r=>!gone(r.id)&&hit(r.label,catOf(r)));
   const memos=(data.memos||[]).filter(x=>!gone(x.id)&&hit(x.text,catOf(x)));
   $('ql1').innerHTML=once.map(x=>row(x,{date:1,del:1})).join('');
-  $('ql2').innerHTML=rules.map(r=>`<li class="row"><div><div class="tx">${esc(r.label)}</div><div class="mt">${pill(catOf(r))}<span class="id">#${r.id}</span></div></div><div class="btns"><button class="rm" data-id="${r.id}" data-rec="1" aria-label="#${r.id} 반복 일정 전체 삭제">반복 삭제</button></div></li>`).join('');
+  $('ql2').innerHTML=rules.map(r=>`<li class="row">${editContent(r,esc(r.label),`${pill(catOf(r))}<span class="id">#${r.id}</span>`)}<div class="btns"><button class="rm" data-id="${r.id}" data-rec="1" aria-label="#${r.id} 반복 일정 전체 삭제">반복 삭제</button></div></li>`).join('');
   $('ql3').innerHTML=memos.map(mrow).join('');
   $('qc1').hidden=!once.length;$('qc2').hidden=!rules.length;$('qc3').hidden=!memos.length;
   const n=once.length+rules.length+memos.length;
@@ -614,7 +730,7 @@ function weekly(){
   $('wkl').innerHTML=days.map(ds=>{
     const dow=parse(ds).getUTCDay(),k=wd?wd.time.indexOf(ds):-1,it=on(ds);
     const w=k>=0?`<div>${wxi(wd.weather_code[k])[1]} ${deg(wd.temperature_2m_max[k])}</div>`:'';
-    const body=it.length?it.map(x=>`<div class="wi k-${CK[catOf(x)]}${dn(x)?' done':''}${x.memo?' memo':''}">${x.memo?'📝 ':''}${x.t?`<b class="tm">${esc(x.t)}</b>`:''}${esc(x.text)}</div>`).join(''):'<div class="mt">일정 없음</div>';
+    const body=it.length?it.map(x=>`<div class="wi k-${CK[catOf(x)]}${dn(x)?' done':''}${x.memo?' memo':''}">${editContent(x,`${x.memo?'📝 ':''}${x.t?`<b class="tm">${esc(x.t)}</b>`:''}${esc(x.text)}`)}</div>`).join(''):'<div class="mt">일정 없음</div>';
     return `<li class="wd${ds===T?' today':''}${dow===0?' sun':dow===6?' sat':''}"><div class="wdh"><b>${WD[dow]}${ds===T?' · 오늘':''}</b>${parse(ds).getUTCMonth()+1}/${parse(ds).getUTCDate()}${w}</div><div>${body}</div></li>`;
   }).join('');
 }
@@ -640,7 +756,7 @@ $('prev').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new
 $('next').onclick=()=>{const[y,m]=viewYM.split('-').map(Number);viewYM=toStr(new Date(Date.UTC(y,m,1))).slice(0,7);calendar()};
 
 function showApp(remembered){$('lock').hidden=true;$('app').hidden=false;$('forget').hidden=!remembered;view();render();loadWeather();pushState().catch(()=>{});for(const k of queued.keys())scheduleAction(k);saveQueued();if(interrupted){interrupted=false;toast('전송 중 끊긴 변경이 있어요. 일정에 반영됐는지 확인해 주세요',8000)}}
-function showLock(msg){$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
+function showLock(msg){resetEditor();$('app').hidden=true;$('lock').hidden=false;$('err').textContent=msg||'';$('go').disabled=false;$('go').textContent='열기';$('pw').value='';$('pw').focus()}
 
 $('f').onsubmit=async e=>{
   e.preventDefault();$('go').disabled=true;$('go').textContent='확인 중…';$('err').textContent='';
@@ -655,8 +771,8 @@ $('f').onsubmit=async e=>{
 $('forget').onclick=()=>{localStorage.removeItem(KEY);for(const timer of timers.values())clearTimeout(timer);timers.clear();for(const k of queued.keys())pend.delete(k);queued.clear();saveQueued();savePend();clearTimeout(toastTimer);$('toast').hidden=true;key=data=null;showLock()};
 
 async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용을 받는다
-  if(!key)return;
-  try{const blob=await fetchBlob();data=await decrypt(blob,key);render()}catch(_){/* 네트워크 실패는 이전 화면 유지 */}
+  const sessionKey=key;if(!sessionKey)return;
+  try{const blob=await fetchBlob(),updated=await decrypt(blob,sessionKey);if(key!==sessionKey)return;data=updated;render()}catch(_){/* 네트워크 실패는 이전 화면 유지 */}
 }
 setInterval(()=>{const t=kstToday();if(t!==T&&data){T=t;viewYM=t.slice(0,7);sel=t;weekStart=mondayOf(t);render()}},60e3);
 setInterval(()=>{if(key)loadWeather()},18e5);   // 날씨는 30분마다

@@ -1,0 +1,42 @@
+--- bot.py
++++ bot.py
+@@ -11,6 +11,7 @@
+ 명령: '@리스트'(앞으로 30일 날짜별) · '@리스트 7' · '@리스트 차량' · '목록' · '목록 차량' · '메모' · '완료 N' · '삭제 N' · '미루기 N'(내일로) · '분류 N 차량'. 형식이 틀리면 Codex가 위 형식으로 바꿔 본다.
+ """
+ import calendar, datetime as dt, hashlib, hmac, json, os, re, secrets, shutil, subprocess, sys, time, urllib.parse, urllib.request
++import web_edit
+ 
+ HERE = os.path.dirname(os.path.abspath(__file__))
+ DATA = os.path.join(HERE, 'todos.json')
+@@ -149,8 +150,7 @@
+ 
+ def is_memo(item):
+     """메모장 항목: 날짜 없는 메모, '#메모'로 넣은 것, 날짜가 지난 뒤에 입력한 기록. 밀린 일·완료가 없다(시각이 있으면 그 시각에 알림)."""
+-    return (item['kind'] == 'note' or bool(item.get('memo'))
+-            or (item['kind'] == 'once' and item['date'] < (item.get('added') or '')))
++    return web_edit.is_memo(item)
+ 
+ 
+ def overdue(item, day):
+@@ -530,7 +530,7 @@
+         text = str(m.get('text') or '')
+     except (ValueError, KeyError, TypeError):
+         return None
+-    if abs(now - ts) > 86400 or a not in (*WEB_ACTS, 'add', 'sub'):
++    if abs(now - ts) > 86400 or a not in (*WEB_ACTS, 'add', 'sub', 'edit') or (a == 'edit' and (not i or int(i) < 1 or not text or len(text) > 10000)):
+         return None
+     sign = lambda s: hmac.new(key.encode(), s.encode(), hashlib.sha256).hexdigest()
+     ok = hmac.compare_digest(sign(f'{a}|{i}|{text}|{ts}'), sig)
+@@ -576,6 +576,12 @@
+             if a == 'sub':
+                 import alarm
+                 say(chat, alarm.add_subscription(text))
++            elif a == 'edit':
++                import publish
++                db = load()
++                result = web_edit.apply_edit(db, int(i), text, publish.names(), CATS)
++                save(db)
++                say(chat, '🌐 웹 수정: ' + result['message'])
+             elif a == 'add':
+                 if is_command(text):
+                     raise ValueError('웹 추가 칸으로는 명령을 보낼 수 없음')
