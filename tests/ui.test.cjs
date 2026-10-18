@@ -1198,6 +1198,54 @@ test('tabs support keyboard navigation and memo/search preserve navigation histo
   assert.equal(await page.locator('#cal').isVisible(), true);
 });
 
+test('a late older refresh cannot restore schedules removed by a newer snapshot', async t => {
+  const {page} = await open(t);
+  const newer = structuredClone(fixture);
+  newer.items = newer.items.filter(x => ![1, 2].includes(x.id));
+  const oldBlob = await encryptFixture(fixture), newBlob = await encryptFixture(newer);
+  let release, started;
+  const held = new Promise(resolve => {release = resolve});
+  const firstStarted = new Promise(resolve => {started = resolve});
+  t.after(() => release());
+  let count = 0;
+  await page.context().route('**/data.enc.json?*', async route => {
+    const first = ++count === 1;
+    if(first) {started(); await held}
+    await route.fulfill({contentType: 'application/json', body: first ? oldBlob : newBlob});
+  });
+  await page.evaluate(() => {window.olderRefresh = reload()});
+  await firstStarted;
+  await page.evaluate(() => reload());
+  assert.equal(await page.locator('#tl .dn[data-id="1"], #tl .dn[data-id="2"]').count(), 0);
+  release();
+  await page.evaluate(() => olderRefresh);
+  assert.equal(await page.locator('#tl .dn[data-id="1"], #tl .dn[data-id="2"]').count(), 0, 'a late snapshot cannot resurrect completed or deleted schedules');
+});
+
+test('a failed newer refresh does not discard a valid response still on the way', async t => {
+  const {page} = await open(t);
+  const updated = structuredClone(fixture);
+  updated.items = updated.items.filter(x => x.id !== 1);
+  const blob = await encryptFixture(updated);
+  let release, started;
+  const held = new Promise(resolve => {release = resolve});
+  const firstStarted = new Promise(resolve => {started = resolve});
+  t.after(() => release());
+  let count = 0;
+  await page.context().route('**/data.enc.json?*', async route => {
+    if(++count !== 1) return route.fulfill({status: 503, body: ''});
+    started(); await held;
+    await route.fulfill({contentType: 'application/json', body: blob});
+  });
+  await page.evaluate(() => {window.validRefresh = reload()});
+  await firstStarted;
+  await page.evaluate(() => reload());
+  assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 1, 'a failed refresh leaves the current screen usable');
+  release();
+  await page.evaluate(() => validRefresh);
+  assert.equal(await page.locator('#tl .dn[data-id="1"]').count(), 0, 'a valid response remains usable when a later request failed');
+});
+
 test('completion can be undone and adding keeps the signed request flow', async t => {
   const {page, requests} = await open(t);
   await page.locator('#tl .dn[data-id="1"]').click();

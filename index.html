@@ -1009,9 +1009,11 @@ $('f').onsubmit=async e=>{
 };
 $('forget').onclick=()=>{draftVersion++;key=data=null;keySalt='';localStorage.removeItem(KEY);localStorage.removeItem(DRAFTS);draftRaw=null;draftBlocked=false;draftWarning();adds.length=0;for(const id of ['saddf','maddf']){delete $(id).entryRequest;$(id).dataset.sending='false';$(id).querySelector('input').value='';entryMessage($(id));entryControls($(id))}for(const timer of timers.values())clearTimeout(timer);timers.clear();for(const k of queued.keys())pend.delete(k);queued.clear();saveQueued();savePend();clearTimeout(toastTimer);$('toast').hidden=true;showLock()};
 
+let refreshStarted=0,refreshApplied=0;
 async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용을 받는다
   const sessionKey=key;if(!sessionKey)return;
-  try{const blob=await fetchBlob(),updated=await decrypt(blob,sessionKey);if(key!==sessionKey)return;data=updated;render()}catch(_){/* 네트워크 실패는 이전 화면 유지 */}
+  const sequence=++refreshStarted;
+  try{const blob=await fetchBlob(),updated=await decrypt(blob,sessionKey);if(key!==sessionKey||sequence<refreshApplied)return;refreshApplied=sequence;data=updated;render()}catch(_){/* 네트워크 실패는 이전 화면 유지 */}
 }
 setInterval(()=>{const t=kstToday();if(t!==T&&data){T=t;viewYM=t.slice(0,7);sel=t;weekStart=mondayOf(t);render()}},60e3);
 setInterval(()=>{if(key)loadWeather()},18e5);   // 날씨는 30분마다
