@@ -1907,13 +1907,34 @@ test('memo weather follows current rain and snow and stays out of the input path
 test('memo precipitation stops for reduced motion and clears after weather failure', async t => {
   const {page} = await open(t, {reducedMotion: 'reduce'}, {fixture: {...weatherFixture, current: {...weatherFixture.current, weather_code: 73}}});
   await page.locator('#tabM').click();
+  await page.locator('#vMemo').waitFor({state:'visible'});
   assert.equal(await page.locator('#memoWeather').count(), 1, 'memo weather layer exists');
   assert.equal(await page.locator('#memoWeather').isVisible(), false);
   await page.emulateMedia({reducedMotion: 'no-preference'});
-  await page.waitForFunction(() => getComputedStyle(document.getElementById('memoWeather')).display !== 'none');
+  await page.locator('#memoWeather').waitFor({state:'visible'});
   assert.equal(await page.locator('#memoWeather').isVisible(), true);
   await page.route('https://api.open-meteo.com/**', route => route.fulfill({status: 503}));
   await page.evaluate(() => loadWeather());
   assert.equal(await page.locator('#memoWeather').getAttribute('data-weather'), '');
   assert.equal(await page.locator('#memoWeatherToggle').isVisible(), false);
+});
+
+test('schedule weather shares the memo toggle and never blocks schedule controls', async t => {
+  const {page}=await open(t,{}, {fixture:{...weatherFixture,current:{...weatherFixture.current,weather_code:61}}});
+  assert.equal(await page.locator('#scheduleWeather').count(),1);
+  assert.equal(await page.locator('#scheduleWeather').isVisible(),true);
+  await page.locator('#sadd').fill('내일 비 오는 날 준비');
+  await page.locator('#modeMonth').click();
+  assert.equal(await page.locator('#monthPanel').isVisible(),true);
+  if(process.env.UI_SCREENSHOTS) await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'schedule-rain.png')});
+  await page.locator('#scheduleWeatherToggle').click();
+  assert.equal(await page.locator('#scheduleWeather').isVisible(),false);
+  await page.locator('#tabM').click();
+  assert.equal(await page.locator('#memoWeather').isVisible(),false);
+  await page.locator('#memoWeatherToggle').click();
+  await page.locator('#tabS').click();
+  assert.equal(await page.locator('#scheduleWeather').isVisible(),true);
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.waitForFunction(()=>getComputedStyle(document.getElementById('scheduleWeather')).display==='none');
+  assert.equal(await page.locator('#scheduleWeather').isVisible(),false);
 });

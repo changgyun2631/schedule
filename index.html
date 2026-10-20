@@ -246,18 +246,19 @@ body:has(#actions:not([hidden])) #toast{display:none}
 }
 @keyframes logo-drift{0%,100%{transform:translate3d(0,0,0) rotate(-1deg)}50%{transform:translate3d(-4px,4px,0) rotate(1deg)}}
 @keyframes logo-breeze{0%,15%{transform:translate3d(-100%,0,0) rotate(-22deg);opacity:0}35%{opacity:.18}65%{opacity:.18}85%,100%{transform:translate3d(450%,0,0) rotate(-22deg);opacity:0}}
-#vMemo{position:relative;isolation:isolate;min-height:65vh}
-#vMemo> :not(.memo-weather){position:relative;z-index:1}
+#vMemo,#vSch{position:relative;isolation:isolate;min-height:65vh}
+#vMemo> :not(.memo-weather),#vSch> :not(.memo-weather){position:relative;z-index:1}
 .memo-weather{position:absolute;inset:0;z-index:2;overflow:hidden;pointer-events:none;border-radius:20px;max-height:85vh;mask-image:linear-gradient(transparent,#000 12%,#000 80%,transparent)}
-#vMemo>.add,#vMemo>.mh{z-index:3}
+#vMemo>.add,#vMemo>.mh,#vSch>.add,#vSch>.schedule-tools,#vSch>#scheduleWeatherToggle{z-index:3}
 .memo-weather i{position:absolute;top:-24px;left:var(--x);animation:memo-rain var(--duration) linear var(--delay) infinite;will-change:transform}
 .memo-weather.paused i{animation-play-state:paused}
-.memo-weather[data-weather="rain"] i{width:1px;height:22px;background:linear-gradient(transparent,var(--acc));opacity:.18}
+.memo-weather[data-weather="rain"] i{width:1.5px;height:32px;background:linear-gradient(transparent,var(--acc));opacity:.34}
 .memo-weather[data-weather="snow"] i{width:var(--size);height:var(--size);border-radius:50%;background:var(--hero-glow);box-shadow:0 0 3px #42788b66;opacity:.55;animation-name:memo-snow}
-#memoWeatherToggle{margin-left:auto;font-size:12px;color:var(--mut);min-height:44px}
+#memoWeatherToggle,#scheduleWeatherToggle{margin-left:auto;font-size:12px;color:var(--mut);min-height:44px}
+#scheduleWeatherToggle{display:block}
 @keyframes memo-rain{to{transform:translate3d(-40px,88vh,0)}}
 @keyframes memo-snow{50%{transform:translate3d(20px,44vh,0)}to{transform:translate3d(-16px,88vh,0)}}
-@media(prefers-reduced-motion:reduce){.memo-weather,#memoWeatherToggle{display:none!important}.memo-weather i{animation:none}}
+@media(prefers-reduced-motion:reduce){.memo-weather,#memoWeatherToggle,#scheduleWeatherToggle{display:none!important}.memo-weather i{animation:none}}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -295,6 +296,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
   <div id="pushc" class="card push" hidden><span>일정 30분 전과 메모 시각에 알림을 받아 보세요.</span><button id="pushb">알림 켜기</button><button class="link" id="pushx">나중에</button></div>
   <div id="actions" class="action-status" aria-label="처리 중인 변경" aria-live="polite" hidden></div>
   <div id="vSch" role="tabpanel" aria-labelledby="tabS">
+  <div id="scheduleWeather" class="memo-weather" aria-hidden="true" data-weather="" hidden></div>
   <div class="hero">
     <div class="hero-mark" aria-hidden="true"><span class="mark-light"></span></div>
     <div class="date-heading">
@@ -309,6 +311,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
     <div class="wxp" id="wxp" hidden></div>
   </div>
   <div id="stale" class="warn" hidden></div>
+  <button id="scheduleWeatherToggle" class="link" type="button" aria-pressed="true" hidden>날씨 효과 끄기</button>
   <form class="add" id="saddf">
     <input id="sadd" placeholder="예: 내일 3시 미팅" autocomplete="off" enterkeyhint="send" aria-label="일정 추가" aria-describedby="svoiceState">
     <button type="button" class="voice" id="svoice" aria-label="음성으로 일정 입력" aria-pressed="false" aria-controls="sadd" aria-describedby="svoiceState"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><g class="voice-mic"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M9 22h6"/></g><rect class="voice-stop" x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></svg></button>
@@ -1009,16 +1012,18 @@ let memoWeatherEnabled=true;
 function renderMemoWeather(){
   const code=wxData?.current?.weather_code;
   const effect=[71,73,75,77,85,86].includes(code)?'snow':[51,53,55,56,57,61,63,65,66,67,80,81,82,95,96,99].includes(code)?'rain':'';
-  const layer=$('memoWeather'),button=$('memoWeatherToggle');
+  for(const prefix of ['memo','schedule']){
+  const layer=$(prefix+'Weather'),button=$(prefix+'WeatherToggle');
   if(layer.dataset.weather!==effect){
     layer.dataset.weather=effect;
-    layer.innerHTML=effect?Array.from({length:20},(_,i)=>`<i style="--x:${(i*37)%100}%;--size:${3+i%4}px;--duration:${effect==='snow'?10+i%7:1.2+(i%5)*.2}s;--delay:-${i*.73}s"></i>`).join(''):'';
+    layer.innerHTML=effect?Array.from({length:effect==='rain'?80:20},(_,i)=>`<i style="--x:${(i*37)%100}%;--size:${3+i%4}px;--duration:${effect==='snow'?10+i%7:1.2+(i%5)*.2}s;--delay:-${i*.73}s"></i>`).join(''):'';
   }
   layer.hidden=!effect||!memoWeatherEnabled;
   button.hidden=!effect;button.setAttribute('aria-pressed',String(memoWeatherEnabled));
   button.textContent=memoWeatherEnabled?'날씨 효과 끄기':'날씨 효과 켜기';
+  }
 }
-$('memoWeatherToggle').onclick=()=>{memoWeatherEnabled=!memoWeatherEnabled;renderMemoWeather()};
+for(const id of ['memoWeatherToggle','scheduleWeatherToggle'])$(id).onclick=()=>{memoWeatherEnabled=!memoWeatherEnabled;renderMemoWeather()};
 async function loadWeather(){
   const w=data&&data.wx,b=$('wxb');
   b.hidden=false;b.disabled=true;b.removeAttribute('aria-label');
@@ -1114,7 +1119,7 @@ async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용�
 setInterval(()=>{const t=kstToday();if(t!==T&&data){T=t;viewYM=t.slice(0,7);sel=t;weekStart=mondayOf(t);render()}},60e3);
 setInterval(()=>{if(key)loadWeather()},18e5);   // 날씨는 30분마다
 setInterval(reload,300e3);
-document.addEventListener('visibilitychange',()=>{$('memoWeather').classList.toggle('paused',document.hidden);if(document.hidden){cancelVoice();saveDrafts()}else reload()});
+document.addEventListener('visibilitychange',()=>{for(const id of ['memoWeather','scheduleWeather'])$(id).classList.toggle('paused',document.hidden);if(document.hidden){cancelVoice();saveDrafts()}else reload()});
 
 (async()=>{
   try{
