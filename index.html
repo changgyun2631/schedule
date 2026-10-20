@@ -258,6 +258,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
 @keyframes memo-snow{50%{transform:translate3d(20px,44vh,0)}to{transform:translate3d(-16px,88vh,0)}}
 @media(prefers-reduced-motion:reduce){.memo-weather{display:none!important}.memo-weather i{animation:none}}
 .recent-searches{margin:12px 0 18px;color:var(--mut);font-size:13px}.recent-searches>div{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.recent-searches .chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;background:var(--card);border-color:var(--ln);margin:3px}
+.memo-checklist{margin-top:10px}.memo-checklist label{display:flex;align-items:center;gap:9px;min-height:44px;font-size:14px;line-height:1.5}.memo-checklist input{width:20px;height:20px;flex:none;accent-color:var(--acc)}.memo-checklist input:checked+span{text-decoration:line-through;color:var(--mut)}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -355,6 +356,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
     <div class="mh"><h1>메모장</h1><span class="sub" id="msub"></span></div>
     <form class="add" id="maddf"><label for="madd">기억할 내용 추가</label><input id="madd" placeholder="예: 우유 사기" autocomplete="off" enterkeyhint="send" aria-describedby="maddhint mcommandState"><button type="button" class="voice" id="mvoice" aria-label="음성으로 메모 입력" aria-pressed="false" aria-controls="madd" aria-describedby="mcommandState"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><g class="voice-mic"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M9 22h6"/></g><rect class="voice-stop" x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></svg></button><button type="submit">추가</button><span class="entry-hint" id="maddhint">알림이 필요하면 날짜와 시간을 함께 적으세요. 예: 10/24 아빠 생신 [09:00]</span><span class="entry-state" id="mcommandState" role="status" aria-live="polite" hidden></span></form>
     <div id="mpend" class="pending" hidden></div>
+    <div class="card" id="pinnedMemos" hidden><h2>고정한 메모 <span class="cnt" id="mlPinnedN"></span></h2><ul id="mlPinned"></ul></div>
     <div class="card"><h2>다가오는 메모</h2><ul id="ml1"></ul></div>
     <div class="card"><h2>메모</h2><ul id="ml2"></ul></div>
     <div class="card"><details><summary>지난 기록 <span class="cnt" id="ml3n"></span></summary><ul id="ml3" style="margin-top:8px"></ul></details></div>
@@ -375,8 +377,9 @@ body:has(#actions:not([hidden])) #toast{display:none}
 <dialog id="editor" class="editor" aria-labelledby="editTitle">
   <form id="editForm" class="edit-form">
     <header class="edit-head"><h2 id="editTitle">일정 수정</h2><button class="edit-close" id="editClose" type="button" aria-label="수정 창 닫기">×</button></header>
-    <input id="editArchived" type="hidden" value=""><div class="edit-body"><fieldset id="editFields" class="edit-fields">
+    <input id="editArchived" type="hidden" value=""><input id="editPinned" type="hidden" value=""><input id="editToSchedule" type="hidden" value=""><div class="edit-body"><fieldset id="editFields" class="edit-fields">
       <label class="edit-wide">내용<textarea id="editText" rows="2" maxlength="2000" required autofocus></textarea></label>
+      <label class="edit-wide" id="editChecklistWrap" hidden>체크리스트<textarea id="editChecklist" rows="4" maxlength="4000" placeholder="한 줄에 한 항목씩 적으세요&#10;우유 사기&#10;빵 사기"></textarea><span class="edit-note">완료한 항목은 [x]로 표시됩니다. 최대 40개</span></label>
       <label class="edit-wide" id="editDateWrap">날짜<span class="edit-control"><input id="editDate" type="date" min="2000-01-01" max="2100-12-31"><button id="editClearDate" class="edit-clear" type="button" aria-label="메모 날짜 지우기" hidden>×</button></span></label>
       <label class="edit-wide" id="editDayWrap" hidden>매달 날짜<input id="editDay" type="number" min="1" max="31" inputmode="numeric"></label>
       <label class="edit-wide" id="editWeekWrap" hidden>매주 요일<select id="editWeek"></select></label>
@@ -384,7 +387,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
       <label>분류<select id="editCat"></select></label>
       <p class="edit-note edit-wide" id="editHint" hidden></p>
     </fieldset></div>
-    <footer class="edit-foot"><p id="editDraftWarning" class="edit-state error" role="status" hidden></p><p id="editState" class="edit-state" role="status"></p><button id="editLatest" class="edit-latest" type="button" hidden>최신 내용 불러오기</button><button id="editDiscard" class="edit-latest" type="button" hidden>초안 버리기</button><button id="editArchive" class="edit-latest" type="button" hidden>보관으로 보내기</button><button id="editSave" class="go" type="submit">저장</button></footer>
+    <footer class="edit-foot"><p id="editDraftWarning" class="edit-state error" role="status" hidden></p><p id="editState" class="edit-state" role="status"></p><button id="editLatest" class="edit-latest" type="button" hidden>최신 내용 불러오기</button><button id="editDiscard" class="edit-latest" type="button" hidden>초안 버리기</button><button id="editPin" class="edit-latest" type="button" aria-pressed="false" hidden>상단 고정</button><button id="editConvert" class="edit-latest" type="button" hidden>일정으로 전환</button><button id="editArchive" class="edit-latest" type="button" hidden>보관으로 보내기</button><button id="editSave" class="go" type="submit">저장</button></footer>
   </form>
 </dialog>
 <div id="toast" role="status" hidden></div>
@@ -458,7 +461,8 @@ function row(x,opt={}){
 function editContent(x,text,meta=''){
   const can=data.edit===1&&x.edit&&!dn(x)&&!changing(x.id);
   const content=`<span class="tx">${text}${can?'<svg class="icon edit-icon" aria-hidden="true"><use href="#i-edit"/></svg>':''}</span>${meta?`<span class="mt">${meta}</span>`:''}`;
-  return can?`<button class="ed" data-id="${x.id}" aria-label="#${x.id} 수정" aria-haspopup="dialog">${content}</button>`:`<div>${content}</div>`;
+  const checks=checklistContent(x);
+  return checks?`<div>${can?`<button class="ed" data-id="${x.id}" aria-label="#${x.id} 수정" aria-haspopup="dialog">${content}</button>`:`<div>${content}</div>`}${checks}</div>`:can?`<button class="ed" data-id="${x.id}" aria-label="#${x.id} 수정" aria-haspopup="dialog">${content}</button>`:`<div>${content}</div>`;
 }
 function chips(){
   const present=new Set([...data.items,...data.rules].map(catOf));
@@ -709,10 +713,10 @@ for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=
   catch(_){request.uncertain=true;if(key===sessionKey){if(pending){pending.state='uncertain';pendAdds();scheduleChangeCheck(3000)}entryMessage(form,'전송 결과를 확인하지 못했어요. 이미 등록됐는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true)}}
   finally{if(form.entryRequest===request){if(!request.uncertain)delete form.entryRequest;form.dataset.sending='false';entryControls(form);saveDrafts()}}
 };
-const edits=new Map(),EDIT_FIELDS=[['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd'],['editArchived','archived']];
+const edits=new Map(),EDIT_FIELDS=[['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd'],['editArchived','archived'],['editPinned','pinned'],['editChecklist','checklist'],['editToSchedule','to_schedule']];
 let editing=null,changeTimer;
 const editFind=id=>[...data.items,...(data.memos||[]),...data.rules].find(x=>x.id===id&&x.edit);
-const editBase=x=>({text:x.text,date:x.edit.date||'',time:x.t||'',cat:catOf(x),day:x.edit.day,wd:x.edit.wd,archived:x.archived?'1':''});
+const editBase=x=>({text:x.text,date:x.edit.date||'',time:x.t||'',cat:catOf(x),day:x.edit.day,wd:x.edit.wd,archived:x.archived?'1':'',pinned:x.pinned?'1':'',checklist:x.checklist||'',to_schedule:''});
 const editDirty=x=>EDIT_FIELDS.some(([,field])=>String(x.draft[field]??'')!==String(x.base[field]??''));
 function draftWarning(message=''){for(const id of ['draftWarning','editDraftWarning']){$(id).textContent=message;$(id).hidden=!message}}
 function saveDrafts(){
@@ -775,7 +779,7 @@ function editMessage(message,error=false,current=editing){
 }
 function editBusy(busy,current=editing){
   current.busy=busy;
-  if(editing===current){$('editFields').disabled=busy;$('editSave').disabled=busy;$('editArchive').disabled=busy;$('editSave').textContent=busy?'반영 확인 중':'저장'}
+  if(editing===current){$('editFields').disabled=busy;$('editSave').disabled=busy;$('editArchive').disabled=busy;$('editPin').disabled=busy;$('editConvert').disabled=busy;$('editSave').textContent=busy?'반영 확인 중':'저장'}
   actionStatus();
 }
 function openEdit(id,fresh=false){
@@ -796,8 +800,11 @@ function openEdit(id,fresh=false){
   $('editDate').required=spec.memo?!!current.draft.time:spec.kind==='once';$('editDay').required=spec.kind==='monthly';
   $('editClearDate').hidden=!spec.memo||repeat;$('editClearTime').disabled=!current.draft.time;
   $('editHint').hidden=!repeat&&!spec.memo;$('editHint').textContent=repeat?'반복 일정 전체에 적용됩니다. 완료 기록은 유지됩니다.':'날짜를 지우면 날짜 없는 메모가 되고 알림도 해제됩니다.';
+  $('editPin').hidden=$('editConvert').hidden=!spec.memo||data.memo_tools!==1;
+  $('editChecklistWrap').hidden=data.memo_tools!==1||(!spec.memo&&!current.base.checklist);
   $('editArchive').hidden=!spec.memo||data.memo_archive!==1;
   $('editArchive').textContent=current.draft.archived==='1'?'보관 해제':'보관으로 보내기';
+  renderMemoTools();
   editBusy(current.busy);editMessage(current.message||'',!!current.error);
   if(!$('editor').open)$('editor').showModal();
 }
@@ -821,6 +828,18 @@ $('editClearTime').onclick=()=>{$('editTime').value='';$('editTime').oninput();s
 $('editClearDate').onclick=()=>{$('editDate').value='';$('editTime').value='';$('editTime').oninput();saveDrafts()};
 for(const event of ['input','change'])$('editForm').addEventListener(event,saveDrafts);
 $('editLatest').onclick=async()=>{const current=editing;await reload();if(editing===current){openEdit(current.id,true);saveDrafts()}};
+function renderMemoTools(){
+  const pinned=$('editPinned').value==='1',converting=$('editToSchedule').value==='1';
+  $('editPin').textContent=pinned?'고정 해제':'상단 고정';$('editPin').setAttribute('aria-pressed',String(pinned));
+  if(!editing?.spec.memo)return;
+  $('editPin').hidden=data.memo_tools!==1||converting;$('editArchive').hidden=data.memo_archive!==1||converting;
+  $('editConvert').textContent=converting?'전환 취소':'일정으로 전환';
+  $('editDate').required=converting||!!$('editTime').value;
+  $('editTitle').textContent=`${converting?'일정으로 전환':'메모 수정'} · #${editing.id}`;
+  $('editHint').hidden=false;$('editHint').textContent=converting?'날짜를 선택하고 저장하면 이 메모가 일정으로 이동합니다. 체크리스트는 유지됩니다.':'날짜를 지우면 날짜 없는 메모가 되고 알림도 해제됩니다.';
+}
+$('editPin').onclick=()=>{$('editPinned').value=$('editPinned').value==='1'?'':'1';renderMemoTools();saveDrafts()};
+$('editConvert').onclick=()=>{$('editToSchedule').value=$('editToSchedule').value==='1'?'':'1';renderMemoTools();saveDrafts();$('editDate').focus()};
 $('editArchive').onclick=()=>{if(!editing||editing.busy)return;$('editArchived').value=$('editArchived').value==='1'?'':'1';$('editForm').requestSubmit()};
 $('editForm').onsubmit=async e=>{
   e.preventDefault();if(!editing||editing.busy||!key)return;
@@ -831,7 +850,8 @@ $('editForm').onsubmit=async e=>{
   if(current.spec.kind==='monthly')values.day=+$('editDay').value;
   if(current.spec.kind==='weekly')values.wd=+$('editWeek').value;
   if(current.spec.memo&&data.memo_archive===1)values.archived=$('editArchived').value;
-  for(const [field,value] of Object.entries(values))if(value!==current.base[field])changes[field]=field==='archived'?value==='1':value;
+  if(data.memo_tools===1){if(current.spec.memo){values.pinned=$('editPinned').value;values.to_schedule=$('editToSchedule').value}if(current.spec.memo||current.base.checklist)values.checklist=$('editChecklist').value.trim()}
+  for(const [field,value] of Object.entries(values))if(value!==(current.base[field]??''))changes[field]=['archived','pinned','to_schedule'].includes(field)?value==='1':value;
   if(!Object.keys(changes).length){
     if(current.command)return editMessage('이전 수정의 반영을 아직 확인하지 못했어요. 내용을 확인하거나 같은 수정으로 다시 시도해 주세요.',true);
     edits.delete(current.id);editing=null;$('editor').close();actionStatus();saveDrafts();return;
@@ -929,12 +949,27 @@ function mrow(x){
   const when=x.date?`${fmt(x.date)}${x.t?' · ⏰ '+x.t:''}`:'';
   return `<li class="row memo">${editContent(x,esc(x.text),`${when?`<span>${esc(when)}</span>`:''}${pill(catOf(x))}${x.archived?'<span class="pill p-memo">보관</span>':''}<span class="id">#${x.id}</span>`)}<div class="btns"><button class="rm" data-id="${x.id}" aria-label="#${x.id} 삭제">삭제</button></div></li>`;
 }
+function checklistLines(text){return String(text||'').split('\n').filter(x=>x.trim())}
+function checklistContent(x){
+  if(!x.checklist)return '';
+  const lines=checklistLines(x.checklist),disabled=x.archived||dn(x)||changing(x.id)||data.memo_tools!==1;
+  return `<div class="memo-checklist">${lines.map((line,i)=>`<label><input type="checkbox" class="memo-check" data-id="${x.id}" data-index="${i}" ${/^\[[xX]\]/.test(line)?'checked':''} ${disabled?'disabled':''}><span>${esc(line.replace(/^\[[xX ]\]\s*/,''))}</span></label>`).join('')}</div>`;
+}
+document.addEventListener('change',e=>{
+  const input=e.target.closest('.memo-check');if(!input||!key)return;
+  const id=+input.dataset.id,x=editFind(id),draft=edits.get(id);
+  if(!x||changing(id)||draft&&editDirty(draft)){render();return toast('작성 중인 수정이나 처리 결과를 먼저 확인해 주세요.',5000,true)}
+  const lines=checklistLines(x.checklist),i=+input.dataset.index;if(!lines[i])return;
+  lines[i]=(input.checked?'[x] ':'[ ] ')+lines[i].replace(/^\[[xX ]\]\s*/,'');
+  openEdit(id);$('editChecklist').value=lines.join('\n');$('editForm').requestSubmit();$('editor').close();input.disabled=true;
+});
 function list2(id,xs,empty){$(id).innerHTML=xs.length?xs.map(mrow).join(''):`<li class="empty">${empty}</li>`}
 function memoView(){
   const ms=(data.memos||[]).filter(x=>!gone(x.id));
-  const active=ms.filter(x=>!x.archived),archived=ms.filter(x=>x.archived);
-  const up=active.filter(x=>x.date&&x.date>=T).sort((a,b)=>a.date.localeCompare(b.date)||(a.t||'').localeCompare(b.t||''));
-  const no=active.filter(x=>!x.date).sort((a,b)=>b.id-a.id),past=active.filter(x=>x.date&&x.date<T).sort((a,b)=>b.date.localeCompare(a.date));
+  const active=ms.filter(x=>!x.archived),archived=ms.filter(x=>x.archived),pinned=active.filter(x=>x.pinned),regular=active.filter(x=>!x.pinned);
+  $('pinnedMemos').hidden=!pinned.length;$('mlPinnedN').textContent=pinned.length;list2('mlPinned',pinned,'');
+  const up=regular.filter(x=>x.date&&x.date>=T).sort((a,b)=>a.date.localeCompare(b.date)||(a.t||'').localeCompare(b.t||''));
+  const no=regular.filter(x=>!x.date).sort((a,b)=>b.id-a.id),past=regular.filter(x=>x.date&&x.date<T).sort((a,b)=>b.date.localeCompare(a.date));
   $('mcnt').textContent=active.length?' '+active.length:'';$('msub').textContent=`${active.length}개`;
   list2('ml1',up,'다가오는 메모가 없어요 · 예: 10/24 아빠생신 [09:00]');list2('ml2',no,'메모가 없어요 · 예: 우유 사기');list2('ml3',past,'지난 기록이 없어요');
   $('ml3n').textContent=past.length;list2('ml4',archived,'보관한 메모가 없어요');$('ml4n').textContent=archived.length;
@@ -986,11 +1021,11 @@ function searchView(){
   renderRecentSearches();
   if(!data)return;
   const q=qn($('qin').value),hit=(t,c)=>!!q&&(qn(t).includes(q)||qn(c)===q),seen=new Set(),once=[];
-  const xs=data.items.filter(x=>x.k==='o'&&!x.memo&&!gone(x.id)&&hit(x.text,catOf(x)))
+  const xs=data.items.filter(x=>x.k==='o'&&!x.memo&&!gone(x.id)&&hit(x.text+' '+(x.checklist||''),catOf(x)))
     .sort((a,b)=>(a.date<T)-(b.date<T)||(a.date<T?b.date.localeCompare(a.date):a.date.localeCompare(b.date)));   // 앞으로 할 것 먼저, 지난 건 최근 순
   for(const x of xs)if(!seen.has(x.id)){seen.add(x.id);once.push(x)}
   const rules=data.rules.filter(r=>!gone(r.id)&&hit(r.label,catOf(r)));
-  const memos=(data.memos||[]).filter(x=>!gone(x.id)&&hit(x.text,catOf(x)));
+  const memos=(data.memos||[]).filter(x=>!gone(x.id)&&hit(x.text+' '+(x.checklist||''),catOf(x)));
   $('ql1').innerHTML=once.map(x=>row(x,{date:1,del:1})).join('');
   $('ql2').innerHTML=rules.map(r=>`<li class="row">${editContent(r,esc(r.label),`${pill(catOf(r))}<span class="id">#${r.id}</span>`)}<div class="btns"><button class="rm" data-id="${r.id}" data-rec="1" aria-label="#${r.id} 반복 일정 전체 삭제">반복 삭제</button></div></li>`).join('');
   $('ql3').innerHTML=memos.map(mrow).join('');

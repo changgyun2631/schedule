@@ -28,3 +28,7 @@ Memo weather uses the existing current-weather response, with decorative rain/sn
 Memo archiving uses the existing signed revision-checked edit transaction with a boolean `archived` field. Only memos accept it. Archived memos keep their text/date/time and editable metadata, remain in the encrypted memo list and search, and are excluded from live occurrences and alarms. `memo_archive: 1` advertises the capability. Restore removes the flag.
 
 Both entry forms share one speech recognition session and require explicit submission after dictation. Recent searches are deduplicated, newest first, limited to ten terms of up to 200 characters, and stored inside the existing encrypted local draft envelope. They are saved on search submission or leaving the input, and cleared with remembered-device data.
+
+`memo_tools: 1` enables pinning, checklist editing and conversion to a schedule. `pinned` is a memo-only boolean; pinned active memos have their own top section. `checklist` is a string with one item per line and optional `[x]`/`[ ]` prefixes, limited to 40 nonempty items and 4000 characters. It is name-masked during publication and restored using the same ambiguity checks as memo text. Checklist updates reuse signed revision-checked edits and remain editable after conversion.
+
+`to_schedule: true` requires a memo and a valid date. It changes the existing item to a one-time schedule with `memo: false`, clears archive/pin flags, and preserves identity, content, registration history and checklist. The client requires a date and offers cancellation before saving.

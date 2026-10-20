@@ -1994,3 +1994,36 @@ test('memo detail sends archive patch and renders confirmed archive separately',
   const restore=JSON.parse(requests.filter(r=>r.url().includes('ntfy.sh')).at(-1).postData());
   assert.deepEqual(JSON.parse(restore.text).changes,{archived:false});
 });
+
+test('memo tools save pin and checklist, toggle an item, and convert without copying',async t=>{
+  const payload=structuredClone(fixture);payload.memo_tools=1;payload.memo_archive=1;
+  const {page,requests}=await open(t,{}, {payload});
+  await page.locator('#tabM').click();await page.locator('#ml2 .ed').click();
+  assert.equal(await page.locator('#editPin').count(),1);
+  await page.locator('#editPin').click();await page.locator('#editChecklist').fill('우유\n빵');
+  await page.locator('#editSave').click();
+  await page.waitForFunction(()=>document.getElementById('editState').textContent.includes('결과'));
+  let cmd=JSON.parse(JSON.parse(requests.filter(r=>r.url().includes('ntfy.sh')).at(-1).postData()).text);
+  assert.deepEqual(cmd.changes,{pinned:true,checklist:'우유\n빵'});
+  async function update(){const blob=await encryptFixture(payload);await page.context().route('**/data.enc.json?*',r=>r.fulfill({contentType:'application/json',body:blob}));await page.evaluate(()=>reload())}
+  Object.assign(payload.memos[0],{pinned:true,checklist:'우유\n빵'});payload.memos[0].edit.rev='d'.repeat(64);payload.edit_results=[{id:8,rid:cmd.rid,ok:true}];await update();
+  assert.equal(await page.locator('#mlPinned .ed').count(),1);assert.equal(await page.locator('#ml2 .ed').count(),0);
+  if(process.env.UI_SCREENSHOTS)await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'pinned-checklist.png')});
+  await page.locator('#mlPinned .memo-check').first().check();
+  await page.waitForFunction(()=>[...edits.values()].some(x=>x.sent));
+  cmd=JSON.parse(JSON.parse(requests.filter(r=>r.url().includes('ntfy.sh')).at(-1).postData()).text);
+  assert.deepEqual(cmd.changes,{checklist:'[x] 우유\n빵'});
+  payload.memos[0].checklist='[x] 우유\n빵';payload.memos[0].edit.rev='e'.repeat(64);payload.edit_results=[{id:8,rid:cmd.rid,ok:true}];await update();
+  await page.locator('#mlPinned .ed').click();await page.locator('#editConvert').click();
+  await page.locator('#editDate').fill(day(1));
+  if(process.env.UI_SCREENSHOTS)await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'memo-convert.png')});
+  await page.locator('#editSave').click();
+  await page.waitForFunction(()=>document.getElementById('editState').textContent.includes('결과'));
+  cmd=JSON.parse(JSON.parse(requests.filter(r=>r.url().includes('ntfy.sh')).at(-1).postData()).text);
+  assert.equal(cmd.changes.to_schedule,true);assert.equal(cmd.changes.date,day(1));
+  const memo=payload.memos.pop();payload.items.push({...memo,k:'o',kind:'once',memo:false,pinned:false,date:day(1),edit:{...memo.edit,rev:'f'.repeat(64),kind:'once',memo:false,date:day(1)}});payload.edit_results=[{id:8,rid:cmd.rid,ok:true}];await update();
+  assert.equal(await page.locator('#mlPinned .ed').count(),0);await page.locator('#tabS').click();
+  assert.equal(await page.locator('#nl .memo-check').count(),2);
+  await page.locator('#tabQ').click();await page.locator('#qin').fill('우유');
+  assert.equal(await page.locator('#ql1 .ed[data-id="8"]').count(),1);
+});

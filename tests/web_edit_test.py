@@ -172,3 +172,30 @@ class MemoArchiveTest(unittest.TestCase):
         self.assertFalse(apply(True,'archive-request-003')['ok'])
         item['memo']=True
         self.assertFalse(apply('yes','archive-request-004')['ok'])
+
+class MemoToolsTest(unittest.TestCase):
+    def setUp(self):
+        self.item={'id':1,'kind':'note','text':'장보기','added':'2026-10-21'}
+        self.db={'items':[self.item],'next_id':2}
+    def edit(self,changes,rid='memo-tools-request-001'):
+        return web_edit.apply_edit(self.db,1,json.dumps({'rid':rid,'rev':web_edit.revision(self.item),'changes':changes}),{},CATS)
+    def test_pin_and_checklist_preserve_identity_and_validate(self):
+        self.assertTrue(self.edit({'pinned':True,'checklist':'우유\n[x] 빵'})['ok'])
+        self.assertTrue(self.item['pinned']);self.assertEqual(self.item['checklist'],'우유\n[x] 빵')
+        before=copy.deepcopy(self.item)
+        self.assertFalse(self.edit({'text':'바뀌면 안됨','checklist':'\n'.join(['항목']*41)},'memo-tools-request-002')['ok'])
+        self.assertEqual(self.item,before)
+    def test_convert_requires_date_and_preserves_content_and_checks(self):
+        self.item.update(archived=True,pinned=True,checklist='우유\n[x] 빵')
+        self.assertFalse(self.edit({'to_schedule':True})['ok'])
+        self.assertTrue(self.edit({'date':'2026-10-25','to_schedule':True},'memo-tools-request-002')['ok'])
+        self.assertEqual(self.item['id'],1);self.assertEqual(self.item['kind'],'once')
+        self.assertFalse(web_edit.is_memo(self.item));self.assertFalse(self.item.get('archived'));self.assertFalse(self.item.get('pinned'))
+        self.assertEqual(self.item['checklist'],'우유\n[x] 빵')
+        self.assertEqual(self.db['next_id'],2)
+        self.assertFalse(self.edit({'pinned':True},'memo-tools-request-003')['ok'])
+    def test_checklist_masked_names_are_restored(self):
+        self.item['checklist']='테스트상사 연락'
+        command={'rid':'memo-tools-masking-001','rev':web_edit.revision(self.item,NAMES),'changes':{'checklist':'[x] T사 연락'}}
+        self.assertTrue(web_edit.apply_edit(self.db,1,json.dumps(command),NAMES,CATS)['ok'])
+        self.assertEqual(self.item['checklist'],'[x] 테스트상사 연락')

@@ -217,3 +217,20 @@ class MemoArchiveIntegrationTest(unittest.TestCase):
         edit(False,'archive-integration-002')
         self.assertEqual(len(alarm.alarms(db['items'],start,end)),1)
         self.assertEqual(item['date'],'2026-10-24')
+
+@unittest.skipUnless(BOT_DIR, 'Set SCHEDULE_BOT_DIR')
+class MemoToolsIntegrationTest(unittest.TestCase):
+    def test_publish_pin_and_checks_then_convert_same_id_without_losing_masked_content(self):
+        item={'id':1,'kind':'note','text':'준비물','checklist':'테스트상사 연락\n[x] 책 반납','pinned':True,'added':'2026-10-21','cat':'업무'}
+        db={'items':[item],'next_id':2};base=bot.dt.date(2026,10,21);names={'테스트상사':'T사'}
+        payload=publish.build_payload(db,base,names)
+        self.assertEqual(payload['memo_tools'],1)
+        self.assertTrue(payload['memos'][0]['pinned'])
+        self.assertEqual(payload['memos'][0]['checklist'],'T사 연락\n[x] 책 반납')
+        command={'rid':'memo-convert-integration-001','rev':payload['memos'][0]['edit']['rev'],'changes':{'to_schedule':True,'date':'2026-10-22'}}
+        self.assertTrue(web_edit.apply_edit(db,1,json.dumps(command),names,bot.CATS)['ok'])
+        payload=publish.build_payload(db,base,names)
+        self.assertFalse(payload['memos']);self.assertEqual(len(payload['items']),1)
+        self.assertEqual(payload['items'][0]['id'],1);self.assertEqual(db['next_id'],2)
+        self.assertEqual(payload['items'][0]['checklist'],'T사 연락\n[x] 책 반납')
+        self.assertFalse(payload['items'][0]['memo']);self.assertFalse(payload['items'][0]['edit']['memo'])

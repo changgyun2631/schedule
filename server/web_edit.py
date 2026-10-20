@@ -61,12 +61,32 @@ def apply_edit(db, item_id, body, names, categories):
             result['code'] = 'conflict'
             raise ValueError('다른 곳에서 먼저 바뀐 일정이에요. 새로고침 후 다시 수정해 주세요.')
         changes = command.get('changes')
-        if not isinstance(changes, dict) or not changes or set(changes) - {'text', 'date', 'time', 'cat', 'day', 'wd', 'archived'}:
+        if not isinstance(changes, dict) or not changes or set(changes) - {'text', 'date', 'time', 'cat', 'day', 'wd', 'archived', 'pinned', 'checklist', 'to_schedule'}:
             raise ValueError('수정할 항목이 올바르지 않아요.')
         new = item.copy()
         memo = is_memo(item)
         for field, value in changes.items():
-            if field == 'archived':
+            if field == 'pinned':
+                if not memo or type(value) is not bool:
+                    raise ValueError('메모만 상단에 고정할 수 있어요.')
+                if value:
+                    new['pinned'] = True
+                else:
+                    new.pop('pinned', None)
+            elif field == 'checklist':
+                if (not memo and not item.get('checklist')) or not isinstance(value, str) or len(value) > 4000 or any(ord(c) < 32 and c not in '\n\t' for c in value):
+                    raise ValueError('체크리스트는 4000자 이내로 적어 주세요.')
+                lines = [line.strip() for line in value.splitlines() if line.strip()]
+                if len(lines) > 40 or any(not re.sub(r'^\[[xX ]\]\s*', '', line).strip() for line in lines):
+                    raise ValueError('체크리스트는 내용이 있는 항목을 최대 40개까지 적어 주세요.')
+                if lines:
+                    new['checklist'] = restore_names(item.get('checklist', ''), '\n'.join(lines), names)
+                else:
+                    new.pop('checklist', None)
+            elif field == 'to_schedule':
+                if not memo or value is not True:
+                    raise ValueError('메모만 일정으로 전환할 수 있어요.')
+            elif field == 'archived':
                 if not memo or type(value) is not bool:
                     raise ValueError('메모만 보관하거나 보관 해제할 수 있어요.')
                 if value:
@@ -109,6 +129,12 @@ def apply_edit(db, item_id, body, names, categories):
                 if item['kind'] != kind or type(value) is not int or not low <= value <= high:
                     raise ValueError('반복 날짜나 요일이 올바르지 않아요.')
                 new[field] = value
+        if changes.get('to_schedule'):
+            if not new.get('date'):
+                raise ValueError('일정으로 전환할 날짜를 선택해 주세요.')
+            new.update(kind='once', memo=False)
+            new.pop('archived', None)
+            new.pop('pinned', None)
         if new['kind'] == 'note' and new.get('time'):
             raise ValueError('알림 시간을 쓰려면 날짜도 선택해 주세요.')
         item.clear()
