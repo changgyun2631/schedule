@@ -8,7 +8,7 @@
  
  HERE = os.path.dirname(os.path.abspath(__file__))
  SITE = os.path.join(os.path.expanduser('~'), 'Desktop', '일정관리')
-@@ -61,6 +62,7 @@
+@@ -61,22 +62,23 @@
          if not bot.is_open(it):
              continue
          done_until = it.get('done_until') or ''
@@ -16,20 +16,33 @@
          days = [start + dt.timedelta(k) for k in range((end - start).days + 1)]
          if it['kind'] == 'once' and not done_until and not bot.is_memo(it) and dt.date.fromisoformat(it['date']) < start:
              days.append(dt.date.fromisoformat(it['date']))        # 오래 밀린 한 번짜리도 보인다
-@@ -71,12 +73,12 @@
+         for d in days:
+             if not bot.occurs(it, d) or (it['kind'] != 'once' and d.isoformat() < (it.get('added') or '')):
+                 continue                                                    # 반복은 넣은 날 이후 회차만
+-            out.append({'id': it['id'], 'date': d.isoformat(), 'text': mask(it['text'], table), 'k': it['kind'][0],
++            out.append({'id': it['id'], 'date': d.isoformat(), 'text': mask(it['text'], table), 'k': it['kind'][0], 'kind': it['kind'],
                          'c': bot.cat_of(it), 't': it.get('time') or '', 'memo': int(bot.is_memo(it)),
                          'ev': int(bool(it.get('event'))), 'early': int(bool(bot.early(it, d))),
                          'done': int(done_until >= (it['date'] if it['kind'] == 'once' else d.isoformat()) if done_until else 0),
 -                        'added': it.get('added') or ''})
 -    rules = [{'id': i['id'], 'label': mask(bot.label(i), table), 'c': bot.cat_of(i)} for i in db['items'] if bot.is_open(i) and i['kind'] in ('monthly', 'weekly')]
 +                        'added': it.get('added') or '', 'edit': edit})
-+    rules = [{'id': i['id'], 'label': mask(bot.label(i), table), 'c': bot.cat_of(i), 'text': mask(i['text'], table), 't': i.get('time') or '', 'edit': web_edit.edit_spec(i, table)} for i in db['items'] if bot.is_open(i) and i['kind'] in ('monthly', 'weekly')]
++    rules = [{'id': i['id'], 'label': mask(bot.label(i), table), 'c': bot.cat_of(i), 'text': mask(i['text'], table), 't': i.get('time') or '', 'edit': web_edit.edit_spec(i, table)} for i in db['items'] if bot.is_open(i) and i['kind'] in ('monthly', 'weekly', 'daily', 'weekdays')]
      memos = [{'id': i['id'], 'date': i.get('date', ''), 't': i.get('time') or '', 'text': mask(i['text'], table), 'c': bot.cat_of(i),
 -              'k': i['kind'][0], 'added': i.get('added') or ''}
 +              'k': i['kind'][0], 'added': i.get('added') or '', 'edit': web_edit.edit_spec(i, table)}
               for i in db['items'] if bot.is_memo(i)]                  # 메모장 탭: 날짜 범위와 상관없이 전부
 -    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos}
-+    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos, 'edit': 1, 'done_dates': 1, 'edit_results': db.get('web_edits', [])}
++    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos, 'edit': 1, 'done_dates': 1, 'edit_results': db.get('web_edits', []), 'add_receipts': 1, 'add_results': db.get('web_adds', [])[-30:]}
  
  
  def derive(pw, salt):
+@@ -120,7 +122,7 @@
+     c = bot.ntfy_conf()                           # 웹 '완료' 버튼용 비밀 주소·서명 열쇠(완료 요청만 보낼 수 있다). 암호문 안에만 들어간다
+     payload['done'] = {'topic': c['topic'], 'key': c['key']}
+     import alarm                                  # 앱 알림을 켤 때 쓰는 공개키(비밀 아님 — 비밀 열쇠는 이 PC의 vapid.json에만)
+-    payload['push'] = {'key': alarm.vapid_keys()['public']}
++    payload['push'] = {'key': alarm.vapid_keys()['public'], 'registered': [hashlib.sha256(s['endpoint'].encode()).hexdigest() for s in alarm.load_subs()]}
+     st = state()
+     digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode('utf-8')
+                             + hashlib.sha256(pw.encode('utf-8')).digest()).hexdigest()   # 비밀번호가 바뀌어도 다시 올린다

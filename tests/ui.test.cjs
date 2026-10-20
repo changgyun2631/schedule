@@ -400,7 +400,8 @@ function mockSpeech() {
 
 function deletionFixture() {
   const payload = structuredClone(fixture);
-  payload.items.push({id: 46, date: today.slice(0, 8) + '20', k: 'o', text: '책 반납하기', c: '개인', edit: {rev: 'd'.repeat(64), kind: 'once', date: today.slice(0, 8) + '20', memo: false}});
+  const date = new Date(Date.UTC(+today.slice(0,4), +today.slice(5,7) - 1 + (+today.slice(8) > 20 ? 1 : 0), 20)).toISOString().slice(0,10);
+  payload.items.push({id: 46, date, k: 'o', text: '책 반납하기', c: '개인', edit: {rev: 'd'.repeat(64), kind: 'once', date, memo: false}});
   return payload;
 }
 
@@ -1786,4 +1787,99 @@ test('short mobile viewports keep the focused input and task actions above navig
   nav = await page.locator('.tabs').boundingBox();
   const tools = await page.locator('.schedule-tools').boundingBox();
   assert.ok(control.y >= tools.y + tools.height && control.y + control.height <= nav.y, 'focused action clears both fixed navigation bars');
+});
+
+test('audit fixes: short deletion dates follow addition month and year rules', async t => {
+  const payload=structuredClone(fixture);
+  payload.items=[{id:46,date:'2026-10-20',k:'o',text:'책 반납하기',c:'개인'}, {id:47,date:'2026-11-20',k:'o',text:'책 반납하기',c:'개인'}, {id:48,date:'2027-01-20',k:'o',text:'책 반납하기',c:'개인'}];
+  const {page}=await open(t,{}, {payload});
+  assert.equal(await page.evaluate(()=>{T='2026-10-21';return deleteTarget('20일 책 반납하기 삭제해줘').id}),47);
+  assert.equal(await page.evaluate(()=>deleteTarget('2026년 10월 20일 책 반납하기 삭제해줘').id),46);
+  assert.equal(await page.evaluate(()=>{T='2026-12-21';return deleteTarget('20일 책 반납하기 삭제해줘').id}),48);
+  assert.equal(await page.evaluate(()=>deleteTarget('1월 20일 책 반납하기 삭제해줘').id),48);
+});
+
+test('audit fixes: daily and weekday rules are editable and never overdue', async t => {
+  const payload=structuredClone(fixture);
+  payload.items=[{id:21,date:day(-1),kind:'daily',k:'d',text:'매일 운동',c:'개인',added:day(-10),edit:{rev:'a'.repeat(64),kind:'daily',memo:false}}, {id:22,date:today,kind:'weekdays',k:'w',text:'평일 업무',c:'업무',added:day(-10),edit:{rev:'b'.repeat(64),kind:'weekdays',memo:false}}, {id:22,date:day(-2),kind:'weekdays',k:'w',text:'평일 업무',c:'업무',added:day(-10)}];
+  const {page,requests}=await open(t,{}, {payload});
+  assert.equal(await page.locator('#od').isVisible(),false);
+  assert.match(await page.locator('#tl').innerText(),/평일/);
+  assert.doesNotMatch(await page.locator('#tl .mt').innerText(),/매주/);
+  await page.locator('#tl .ed[data-id="22"]').click();
+  assert.equal(await page.locator('#editDate').isVisible(),false);
+  await page.locator('#editTime').fill('10:30');await page.locator('#editSave').click();
+  await page.waitForFunction(()=>document.getElementById('editState').textContent.includes('반영 결과'));
+  assert.deepEqual(JSON.parse(requests.find(r=>r.url().includes('ntfy.sh')).postDataJSON().text).changes,{time:'10:30'});
+});
+
+test('audit fixes: additions wait for their receipt and keep failures after reload', async t => {
+  const payload={...structuredClone(fixture),add_receipts:1,add_results:[]};
+  const {page,requests}=await open(t,{}, {payload});
+  await page.locator('#sadd').fill('내일 주간 업무 계획 정리');await page.locator('#saddf button[type=submit]').click();
+  await page.waitForFunction(()=>!document.querySelector('#saddf button[type=submit]').disabled);
+  const body=requests.find(r=>r.url().includes('ntfy.sh')).postDataJSON();assert.equal(body.a,'create');
+  const command=JSON.parse(body.text);assert.match(command.rid,/^[a-f0-9-]{36}$/);
+  await page.evaluate(()=>render());assert.equal(await page.locator('#spend').isVisible(),true,'old same-title task is not a receipt');
+  payload.add_results=[{rid:command.rid,ok:false,message:'날짜를 확인해 주세요.'}];
+  let blob=await encryptFixture(payload);
+  await page.context().route('**/data.enc.json?*',route=>route.fulfill({contentType:'application/json',body:blob}));
+  await page.evaluate(()=>reload());assert.match(await page.locator('#spend').innerText(),/날짜를 확인/);
+  await page.reload();await page.locator('#pw').fill('preview');await page.locator('#go').click();await page.locator('#app').waitFor({state:'visible'});
+  assert.match(await page.locator('#spend').innerText(),/날짜를 확인/);
+  await page.locator('#spend .add-restore').click();assert.equal(await page.locator('#sadd').inputValue(),'내일 주간 업무 계획 정리');
+});
+
+test('audit fixes: unconfirmed addition survives timeout and retry keeps identity', async t => {
+  const payload={...structuredClone(fixture),add_receipts:1,add_results:[]};
+  const {page,requests}=await open(t,{}, {payload});await page.clock.install();
+  await page.context().route('https://ntfy.sh/**',route=>route.fulfill({status:503,body:''}));
+  await page.locator('#sadd').fill('내일 새 일정');await page.locator('#saddf button[type=submit]').click();
+  await page.waitForFunction(()=>!document.querySelector('#saddf button[type=submit]').disabled);
+  let posts=requests.filter(r=>r.url().includes('ntfy.sh'));const first=JSON.parse(posts[0].postDataJSON().text);
+  await page.clock.fastForward(601000);assert.equal(await page.locator('#spend').isVisible(),true);
+  await page.context().route('https://ntfy.sh/**',route=>route.fulfill({status:200,body:'{}'}));
+  await page.locator('#saddf button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#saddf button[type=submit]').disabled);
+  posts=requests.filter(r=>r.url().includes('ntfy.sh'));assert.equal(JSON.parse(posts.at(-1).postDataJSON().text).rid,first.rid);
+  const blob=await encryptFixture({...payload,add_results:[{rid:first.rid,ok:true,id:90}]});
+  await page.context().route('**/data.enc.json?*',route=>route.fulfill({contentType:'application/json',body:blob}));
+  await page.evaluate(()=>reload());assert.equal(await page.locator('#spend').isVisible(),false);
+});
+
+test('audit fixes: failed push registration remains reconnectable until bot confirms', async t => {
+  const payload={...fixture,push:{key:'AA',registered:[]}};
+  const {page}=await open(t,{}, {payload},()=>{
+    let subscription=null;
+    const reg={pushManager:{getSubscription:async()=>subscription,subscribe:async()=>subscription={endpoint:'https://push.invalid/test',keys:{p256dh:'fake',auth:'fake'}}}};
+    Object.defineProperty(navigator,'serviceWorker',{value:{getRegistration:async()=>reg,register:async()=>reg,ready:Promise.resolve(reg)}});
+    Object.defineProperty(window,'PushManager',{value:class {}});
+    Object.defineProperty(window,'Notification',{value:class {static permission='granted';static async requestPermission(){return 'granted'}}});
+  });
+  await page.context().route('https://ntfy.sh/**',route=>route.fulfill({status:503,body:''}));
+  await page.locator('#pushb').click();await page.waitForFunction(()=>document.getElementById('toast').textContent.includes('켜지 못'));
+  await page.evaluate(()=>pushState());assert.equal(await page.locator('#pushc').isVisible(),true);
+  await page.context().route('https://ntfy.sh/**',route=>route.fulfill({status:200,body:'{}'}));
+  await page.locator('#pushb').click();await page.evaluate(()=>pushState());assert.equal(await page.locator('#pushc').isVisible(),true);
+  const {createHash}=require('node:crypto');payload.push.registered=[createHash('sha256').update('https://push.invalid/test').digest('hex')];
+  const blob=await encryptFixture(payload);await page.context().route('**/data.enc.json?*',route=>route.fulfill({contentType:'application/json',body:blob}));
+  await page.evaluate(()=>reload());await page.locator('#pushc').waitFor({state:'hidden'});
+});
+
+test('audit fixes: stalled weather releases a working retry button', async t => {
+  const {page}=await open(t);await page.clock.install();
+  await page.context().route('https://api.open-meteo.com/**',()=>{});
+  await page.evaluate(()=>{void loadWeather()});await page.clock.runFor(16000);
+  assert.equal(await page.locator('#wxb').isDisabled(),false);assert.match(await page.locator('#wxb').innerText(),/다시/);
+  await page.context().route('https://api.open-meteo.com/**',route=>route.fulfill({contentType:'application/json',body:JSON.stringify(weatherFixture)}));
+  await page.locator('#wxb').click();await page.waitForFunction(()=>document.getElementById('wxb').textContent.includes('18°'));
+});
+
+test('audit fixes: deleting a recurring rule updates hero counts and rule card immediately', async t => {
+  const payload=structuredClone(fixture);payload.items.push({id:7,date:today,k:'w',text:'업무 회고',c:'업무'});
+  const {page}=await open(t,{}, {payload});await page.clock.install();
+  const before=Number(await page.locator('#s1').innerText());
+  await page.locator('#sadd').fill('#7 삭제해줘');await page.locator('#saddf button[type=submit]').click();
+  assert.equal(Number(await page.locator('#s1').innerText()),before-1);assert.equal(await page.locator('#rn').innerText(),'0');
+  assert.doesNotMatch(await page.locator('#rl').textContent(),/#7/);
+  await page.locator('#actions .undo').click();assert.equal(Number(await page.locator('#s1').innerText()),before);assert.equal(await page.locator('#rn').innerText(),'1');
 });

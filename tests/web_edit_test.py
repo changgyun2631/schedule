@@ -1,22 +1,22 @@
 """No live data, notifications or network: exercise the web edit transaction."""
 import copy
-import importlib
+import importlib.util
 import json
 from pathlib import Path
-import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'server'))
-try:
-    web_edit = importlib.import_module('web_edit')
-except ModuleNotFoundError:
-    web_edit = None
+spec = importlib.util.spec_from_file_location('repository_web_edit', Path(__file__).resolve().parents[1] / 'server' / 'web_edit.py')
+web_edit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(web_edit)
 
 CATS = ['업무', '미팅', '차량', '개인', '경기', '기타']
 NAMES = {'테스트상사': 'T사'}
 
 
 class WebEditTest(unittest.TestCase):
+    def test_unit_tests_load_the_repository_module(self):
+        self.assertEqual(Path(web_edit.__file__).resolve(), Path(__file__).resolve().parents[1] / 'server' / 'web_edit.py')
+
     def setUp(self):
         self.assertIsNotNone(web_edit, 'The web edit transaction is not implemented')
         self.item = {'id': 7, 'kind': 'once', 'date': '2026-10-20', 'text': '테스트상사 미팅',
@@ -129,6 +129,29 @@ class WebEditTest(unittest.TestCase):
         self.assertTrue(web_edit.is_memo(self.item))
         self.item['memo'] = False
         self.assertFalse(web_edit.is_memo(self.item))
+
+    def test_daily_and_weekday_rules_keep_their_kind_when_editing(self):
+        for kind in ('daily', 'weekdays'):
+            item = {'id': 1, 'kind': kind, 'text': '반복 업무', 'time': '09:00', 'cat': '업무', 'done_until': '2026-10-20'}
+            self.assertIsNotNone(web_edit.edit_spec(item))
+            body = json.dumps({'rid': 'repeat-edit-' + kind, 'rev': web_edit.revision(item), 'changes': {'text': '변경한 업무', 'time': '10:00'}})
+            self.assertTrue(web_edit.apply_edit({'items': [item]}, 1, body, {}, CATS)['ok'])
+            self.assertEqual((item['kind'], item['text'], item['time'], item['done_until']), (kind, '변경한 업무', '10:00', '2026-10-20'))
+
+    def test_old_add_retry_cannot_recreate_a_deleted_item_after_many_receipts(self):
+        db = {'next_id': 1, 'items': []}
+        def create(text):
+            db['items'].append({'id': db['next_id'], 'text': text})
+            db['next_id'] += 1
+            return '저장'
+        body = json.dumps({'rid': 'original-create-001', 'text': '처음 일정'})
+        original = web_edit.apply_create(db, body, create)
+        db['items'].clear()
+        for i in range(35):
+            web_edit.apply_create(db, json.dumps({'rid': f'other-create-{i:03}', 'text': []}), create)
+        self.assertEqual(web_edit.apply_create(db, body, create), original)
+        self.assertEqual(db['items'], [])
+        self.assertEqual(db['web_adds'][-1]['rid'], 'original-create-001')
 
 
 if __name__ == '__main__':

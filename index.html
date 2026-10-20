@@ -143,7 +143,6 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .wx-place{font-size:11px;color:var(--hero-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wx-state{font-size:12px;word-break:keep-all;overflow-wrap:anywhere;color:var(--hero-tx)}
 .wxp{grid-column:1/-1;min-width:0;border-top:1px solid var(--hero-ln);padding-top:16px;font-size:14px;color:var(--hero-tx)}
-.wxp .sub{color:var(--hero-mut)}
 .now{margin-bottom:8px}
 .hrs{display:flex;gap:4px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin}
 .hr{flex:none;min-width:48px;text-align:center;font-size:13px}
@@ -189,6 +188,8 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .push .link{background:none;color:var(--mut);padding:0 4px}
 .pending{font-size:13px;color:var(--mut);margin:8px 0 0}
 .pending div{padding:2px 0}
+.pending button{min-height:44px;border:1px solid var(--ln);border-radius:8px;background:var(--card);color:var(--acc);padding:0 12px;margin:4px 8px 4px 0;font:inherit}
+.pending .error{color:var(--red)}
 .action-status{position:fixed;z-index:21;left:16px;right:16px;bottom:24px;max-width:600px;max-height:35vh;overflow:auto;margin:0 auto;padding:8px 12px;background:var(--card);border:1px solid var(--ln);border-radius:10px;font-size:13px;color:var(--mut);box-shadow:0 4px 16px #0002}
 .action-status>div{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
 .action-status .undo{margin-left:0;flex:none;color:var(--acc)}
@@ -396,6 +397,7 @@ let weekStart=mondayOf(T),wxData=null,wxName='';
 // 카테고리: 맨 위 버튼으로 고른다(이 기기에 기억). 데이터의 c가 없으면 기타.
 const CATS=['업무','미팅','차량','개인','경기','기타'],CK={업무:'work',미팅:'meet',차량:'car',개인:'me',경기:'game',기타:'etc'};
 const catOf=x=>CK[x.c]?x.c:'기타';
+const kindOf=x=>x.kind||x.edit?.kind||({o:'once',w:'weekly',m:'monthly',d:'daily'}[x.k]);
 let cat='';try{cat=localStorage.getItem('schedule-cat')||''}catch(_){}
 const vis=x=>!cat||catOf(x)===cat;
 const pill=c=>`<span class="pill p-${CK[c]}">${c}</span>`;
@@ -418,7 +420,7 @@ async function decrypt(blob,k){
 function overdue(){
   const out=[],last={},wk=[0,6].includes(parse(T).getUTCDay());
   for(const x of data.items){
-    if(x.ev||x.memo||dn(x)||gone(x.id)||x.date>=T)continue;   // 경기·메모는 밀린 일이 아니다
+    if(x.ev||x.memo||['daily','weekdays'].includes(kindOf(x))||dn(x)||gone(x.id)||x.date>=T)continue;
     if(x.k==='o'){out.push(x);continue}
     if(!last[x.id]||x.date>last[x.id].date)last[x.id]=x;     // 반복은 가장 최근 회차만
   }
@@ -426,7 +428,7 @@ function overdue(){
   return out.sort((a,b)=>a.date.localeCompare(b.date)||a.id-b.id);
 }
 function row(x,opt={}){
-  const meta=[opt.date?fmt(x.date):'',opt.ago?`${diff(T,x.date)}일 지남`:'',x.early?'마감이 주말이라 미리':'',x.k==='m'?'매달':x.k==='w'?'매주':''].filter(Boolean).join(' · ');
+  const meta=[opt.date?fmt(x.date):'',opt.ago?`${diff(T,x.date)}일 지남`:'',x.early?'마감이 주말이라 미리':'',({monthly:'매달',weekly:'매주',daily:'매일',weekdays:'평일'}[kindOf(x)]||'')].filter(Boolean).join(' · ');
   const live=!dn(x)&&!x.ev&&!x.memo;
   const done=live&&x.date<=addDays(T,1)?`<button class="dn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 완료">완료</button>`:'';   // 오늘·내일·밀린 일만(경기는 제외)
   const snz=live&&x.k==='o'&&x.date<=T?`<button class="sn" data-id="${x.id}" data-d="${x.date}" aria-label="#${x.id} 내일로">내일로</button>`:'';   // 한 번짜리 오늘·밀린 일
@@ -444,7 +446,7 @@ function editContent(x,text,meta=''){
 function chips(){
   const present=new Set([...data.items,...data.rules].map(catOf));
   if(cat&&!present.has(cat))cat='';
-  const soon=[...overdue(),...data.items.filter(x=>!dn(x)&&(x.date===T||x.date===addDays(T,1)))],cnt={};
+  const soon=[...overdue(),...data.items.filter(x=>!gone(x.id)&&!dn(x)&&(x.date===T||x.date===addDays(T,1)))],cnt={};
   soon.forEach(x=>cnt[catOf(x)]=(cnt[catOf(x)]||0)+1);
   $('chips').innerHTML=[''].concat(CATS.filter(c=>present.has(c))).map(c=>`<button class="chip${c===cat?' on':''}" data-c="${c}" aria-pressed="${c===cat}">${c||'전체'}${c&&cnt[c]?`<i>${cnt[c]}</i>`:''}</button>`).join('');
 }
@@ -565,13 +567,14 @@ function deleteTarget(text){
   const target=text.replace(deleteEnding,'').trim();
   let m=target.match(/^(?:#|샵|샾)\s*(.+?)(?:\s*번)?$/)||target.match(/^(\d+)(?:\s*번)?$/);
   if(m){const id=spokenNumber(m[1]);return Number.isSafeInteger(id)&&id>0?{id}: {error:'일정 번호를 확인해 주세요. 예: #46 삭제해줘'} }
-  const now=parse(T);let year=now.getUTCFullYear(),month=now.getUTCMonth()+1,day,date,title;
+  const now=parse(T);let year=now.getUTCFullYear(),month=now.getUTCMonth()+1,day,date,title,implicitYear=false;
   if(m=target.match(/^(오늘|내일|모레)\s*(.+)$/)){date=addDays(T,{오늘:0,내일:1,모레:2}[m[1]]);title=m[2]}
-  else if(m=target.match(/^(?:(\d{4})년\s*)?(\d{1,2})월\s*(\d{1,2})일\s*(.+)$/)){year=m[1]?+m[1]:year;month=+m[2];day=+m[3];title=m[4]}
-  else if(m=target.match(/^(?:(\d{4})[/-])?(\d{1,2})[/-](\d{1,2})\s+(.+)$/)){year=m[1]?+m[1]:year;month=+m[2];day=+m[3];title=m[4]}
-  else if(m=target.match(/^(\d{1,2})일\s*(.+)$/)){day=+m[1];title=m[2]}
+  else if(m=target.match(/^(?:(\d{4})년\s*)?(\d{1,2})월\s*(\d{1,2})일\s*(.+)$/)){implicitYear=!m[1];year=m[1]?+m[1]:year;month=+m[2];day=+m[3];title=m[4]}
+  else if(m=target.match(/^(?:(\d{4})[/-])?(\d{1,2})[/-](\d{1,2})\s+(.+)$/)){implicitYear=!m[1];year=m[1]?+m[1]:year;month=+m[2];day=+m[3];title=m[4]}
+  else if(m=target.match(/^(\d{1,2})일\s*(.+)$/)){day=+m[1];title=m[2];if(day>=1&&day<=31&&day<now.getUTCDate()){if(++month>12){month=1;year++}day=Math.min(day,new Date(Date.UTC(year,month,0)).getUTCDate())}}
   else return {error:'삭제할 날짜·내용 또는 번호를 적어 주세요. 예: 20일 책 반납하기 삭제해줘 · #46 제거해줘'};
   if(!date){date=`${year}-${pad(month)}-${pad(day)}`;if(toStr(parse(date))!==date)return {error:'삭제할 일정의 날짜가 올바르지 않아요.'}}
+  if(implicitYear&&diff(T,date)>100)date=`${year+1}-${pad(month)}-${pad(day)}`;
   const normalize=s=>s.normalize('NFC').replace(/\s/g,'');
   const matches=[...new Map([...data.items,...(data.memos||[])].filter(x=>x.date===date&&normalize(x.text)===normalize(title)).map(x=>[x.id,x])).values()];
   if(!matches.length)return {error:'해당 날짜·내용의 일정이 없어요. 날짜와 내용을 확인하거나 #번호로 지정해 주세요.'};
@@ -583,14 +586,32 @@ function deleteTarget(text){
 }
 // 추가 칸: 글을 그대로 봇에 보낸다(텔레그램에 보내는 것과 같은 형식). 반영될 때까지 '보냄'으로 보여 준다.
 const adds=[];
-const core=t=>t.replace(/#\S+/g,'').replace(/\[\d{1,2}:\d{2}\]/g,'').replace(/^\s*(?:(?:\d{4}\/)?\d{1,2}\/\d{1,2}|\+\d+|매달\s*\d+일?|매주\s*\S)\s+/,'').replace(/^\d{1,2}:\d{2}\s+/,'').trim();
 function pendAdds(){
-  const count=adds.length;
-  const all=[...data.items,...(data.memos||[])].map(x=>x.text);
-  for(let i=adds.length-1;i>=0;i--)if(Date.now()-adds[i].ts>6e5||all.some(t=>t.includes(core(adds[i].text))))adds.splice(i,1);
-  for(const [id,memo] of [['spend',0],['mpend',1]]){const xs=adds.filter(x=>x.memo===memo);$(id).hidden=!xs.length;$(id).innerHTML=xs.map(x=>`<div>⏳ 보냄 · 곧 반영돼요: ${esc(x.text)}</div>`).join('')}
-  if(adds.length!==count)saveDrafts();
+  let changed=false;
+  for(let i=adds.length-1;i>=0;i--){
+    const x=adds[i],result=x.rid&&(data.add_results||[]).find(r=>r.rid===x.rid);
+    if(result?.ok){adds.splice(i,1);changed=true;toast(`#${result.id} 추가했어요.`,4000);continue}
+    const state=result?'failed':Date.now()-x.ts>=120000?'uncertain':x.state||'checking';
+    const message=result?result.message:state==='uncertain'?'아직 저장 결과를 확인하지 못했어요. 일정 상태를 확인해 주세요.':state==='sending'?'추가 요청을 보내고 있어요.':'추가 반영 확인 중';
+    if(x.state!==state||x.message!==message){Object.assign(x,{state,message});changed=true}
+  }
+  for(const [id,memo] of [['spend',0],['mpend',1]]){
+    const xs=adds.filter(x=>x.memo===memo);$(id).hidden=!xs.length;
+    $(id).innerHTML=xs.map(x=>`<div${['failed','uncertain'].includes(x.state)?' class="error"':''}><span>${esc(x.message)} · ${esc(x.text)}</span><br><button class="add-check" data-i="${adds.indexOf(x)}">반영 확인</button>${['failed','uncertain'].includes(x.state)?`<button class="add-restore" data-i="${adds.indexOf(x)}">입력 복원</button><button class="add-dismiss" data-i="${adds.indexOf(x)}">표시 지우기</button>`:''}</div>`).join('');
+  }
+  if(changed)saveDrafts();
 }
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('.add-check,.add-restore,.add-dismiss');if(!b||!key)return;
+  const x=adds[+b.dataset.i];if(!x)return;
+  if(b.classList.contains('add-check')){b.disabled=true;await reload();if(key){pendAdds();scheduleChangeCheck()}return}
+  if(b.classList.contains('add-restore')){
+    const input=$(x.memo?'madd':'sadd'),form=$(x.memo?'maddf':'saddf');
+    if(input.value&&input.value.trim()!==x.text)return entryMessage(form,'입력 중인 내용이 있어요. 먼저 복사하거나 비운 뒤 복원해 주세요.',true);
+    input.value=x.memo?x.text.replace(/^#메모\s+/,''):x.text;entryControls(form);input.focus();
+  }else adds.splice(adds.indexOf(x),1);
+  saveDrafts();pendAdds();scheduleChangeCheck();
+});
 let voice=null;
 function entryMessage(form,message='',error=false){const state=form.querySelector('.entry-state');state.textContent=message;state.hidden=!message;state.classList.toggle('error',error)}
 function voiceMessage(message='',error=false){entryMessage($('saddf'),message,error)}
@@ -662,8 +683,11 @@ for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=
   if(memo&&!/#메모/.test(text))text='#메모 '+text;
   const sessionKey=key;form.dataset.sending='true';entryControls(form);
   const request={uncertain:false};form.entryRequest=request;
-  try{await saveDrafts();if(key!==sessionKey||form.entryRequest!==request)return;await sendAct('add',{text});if(key!==sessionKey)return;if($(inp).value===input)$(inp).value='';adds.push({text,memo,ts:Date.now()});pendAdds();toast('보냈어요 · 1분쯤 뒤 반영돼요(결과는 텔레그램에도 와요)',5000);setTimeout(reload,7e4)}
-  catch(_){request.uncertain=true;if(key===sessionKey)entryMessage(form,'전송 결과를 확인하지 못했어요. 이미 등록됐는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true)}
+  let pending=data.add_receipts===1?adds.find(x=>x.rid&&x.text===text&&x.memo===memo&&x.state!=='failed'):null;
+  if(data.add_receipts===1&&!pending){pending={rid:crypto.randomUUID(),text,memo,ts:Date.now()};adds.push(pending)}
+  if(pending){pending.state='sending';pending.ts=Date.now();pendAdds()}
+  try{await saveDrafts();if(key!==sessionKey||form.entryRequest!==request)return;await sendAct(pending?'create':'add',{text:pending?JSON.stringify({rid:pending.rid,text}):text});if(key!==sessionKey)return;if($(inp).value===input)$(inp).value='';if(pending)pending.state='checking';else adds.push({text,memo,ts:Date.now(),state:'checking'});pendAdds();scheduleChangeCheck(3000);toast('추가 요청을 보냈어요. 저장 결과를 확인하고 있어요.',5000)}
+  catch(_){request.uncertain=true;if(key===sessionKey){if(pending){pending.state='uncertain';pendAdds();scheduleChangeCheck(3000)}entryMessage(form,'전송 결과를 확인하지 못했어요. 이미 등록됐는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true)}}
   finally{if(form.entryRequest===request){if(!request.uncertain)delete form.entryRequest;form.dataset.sending='false';entryControls(form);saveDrafts()}}
 };
 const edits=new Map(),EDIT_FIELDS=[['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd']];
@@ -709,15 +733,15 @@ async function restoreDrafts(){
     if(typeof saved.sadd!=='string'||typeof saved.madd!=='string'||!Array.isArray(saved.edits)||!Array.isArray(saved.adds))throw new Error('Invalid draft data');
     const restored=[];
     for(const x of saved.edits){
-      if(!Number.isSafeInteger(x.id)||x.id<1||!validDraftFields(x.base)||!validDraftFields(x.draft)||!['once','note','weekly','monthly'].includes(x.spec?.kind)||typeof x.rev!=='string'||!/^[a-f0-9]{64}$/.test(x.rev))throw new Error('Invalid edit draft');
+      if(!Number.isSafeInteger(x.id)||x.id<1||!validDraftFields(x.base)||!validDraftFields(x.draft)||!['once','note','weekly','monthly','daily','weekdays'].includes(x.spec?.kind)||typeof x.rev!=='string'||!/^[a-f0-9]{64}$/.test(x.rev))throw new Error('Invalid edit draft');
       if(x.command&&(typeof x.command.rid!=='string'||!/^[A-Za-z0-9_-]{10,64}$/.test(x.command.rid)||x.command.rev!==x.rev||!Number.isFinite(x.requestAt)||!x.command.changes||!Object.keys(x.command.changes).length||Object.keys(x.command.changes).some(k=>!EDIT_FIELDS.some(([,field])=>field===k))))throw new Error('Invalid pending edit');
       const waiting=!!(x.command&&x.busy&&x.sent&&Date.now()-x.requestAt>=0&&Date.now()-x.requestAt<120000);
       restored.push({...x,busy:waiting,...(x.command&&!waiting?{error:true,message:'화면이 닫히기 전 수정의 반영을 아직 확인하지 못했어요. 내용을 확인한 뒤 다시 시도해 주세요.'}:{})});
     }
-    if(saved.adds.some(x=>typeof x.text!=='string'||![0,1].includes(x.memo)||!Number.isFinite(x.ts)))throw new Error('Invalid pending additions');
+    if(saved.adds.some(x=>typeof x.text!=='string'||![0,1].includes(x.memo)||!Number.isFinite(x.ts)||(x.rid&&!/^[A-Za-z0-9_-]{10,64}$/.test(x.rid))))throw new Error('Invalid pending additions');
     $('sadd').value=saved.sadd;$('madd').value=saved.madd;
     for(const x of restored)edits.set(x.id,x);
-    adds.push(...saved.adds);
+    adds.push(...saved.adds.map(x=>({...x,...(x.state==='sending'?{state:'uncertain'}:{})})));
     for(const id of ['saddf','maddf']){if(saved.submitting?.[id]){$(id).entryRequest={uncertain:true};entryMessage($(id),'추가 요청 전송 중 화면이 닫혔어요. 이미 등록됐는지 확인한 뒤 다시 시도해 주세요.',true)}entryControls($(id))}
   }catch(_){if(key===sessionKey){draftBlocked=true;draftWarning('보관한 초안을 열지 못했어요. 현재 입력은 앱을 닫기 전에 따로 복사해 주세요.')}}
 }
@@ -744,7 +768,7 @@ function openEdit(id,fresh=false){
     current={id,rev:x.edit.rev,spec:x.edit,busy:false,base,draft:{...base}};edits.set(id,current);
   }
   editing=current;
-  const spec=current.spec,repeat=['monthly','weekly'].includes(spec.kind);
+  const spec=current.spec,repeat=['monthly','weekly','daily','weekdays'].includes(spec.kind);
   $('editTitle').textContent=`${repeat?'반복 일정':spec.memo?'메모':'일정'} 수정 · #${id}`;
   for(const [field,name] of EDIT_FIELDS)$(field).value=current.draft[name]??'';
   for(const [wrap,input,show] of [['editDateWrap','editDate',!repeat],['editDayWrap','editDay',spec.kind==='monthly'],['editWeekWrap','editWeek',spec.kind==='weekly']]){$(wrap).hidden=!show;$(input).disabled=!show}
@@ -777,7 +801,7 @@ $('editLatest').onclick=async()=>{const current=editing;await reload();if(editin
 $('editForm').onsubmit=async e=>{
   e.preventDefault();if(!editing||editing.busy||!key)return;
   stashEdit();
-  const changes={},current=editing,sessionKey=key,repeat=['weekly','monthly'].includes(current.spec.kind);
+  const changes={},current=editing,sessionKey=key,repeat=['weekly','monthly','daily','weekdays'].includes(current.spec.kind);
   const values={text:$('editText').value.trim(),...(!repeat?{date:$('editDate').value}:{}),time:$('editTime').value,cat:$('editCat').value};
   if(!values.text){editMessage('내용을 적어 주세요.',true);$('editText').focus();return}
   if(current.spec.kind==='monthly')values.day=+$('editDay').value;
@@ -801,11 +825,13 @@ $('editForm').onsubmit=async e=>{
 function scheduleChangeCheck(delay){
   clearTimeout(changeTimer);if(!key)return;
   const edit=[...edits.values()].some(x=>x.busy&&x.sent),waiting=[...pend].filter(([k])=>!queued.has(k)||queued.get(k).state==='checking');
-  if(edit||waiting.length)changeTimer=setTimeout(checkChanges,delay??(edit||waiting.some(([k,t])=>Date.now()-(queued.get(k)?.sentAt??t)<120000)?5000:30000));
+  const adding=adds.some(x=>x.state!=='failed'&&Date.now()-x.ts<9e5),push=pushPending&&Date.now()-pushPending<120000;
+  if(edit||waiting.length||adding||push)changeTimer=setTimeout(checkChanges,delay??(edit||push||adds.some(x=>x.state!=='failed'&&Date.now()-x.ts<120000)||waiting.some(([k,t])=>Date.now()-(queued.get(k)?.sentAt??t)<120000)?5000:30000));
 }
 async function checkChanges(){
   const sessionKey=key;if(!sessionKey)return;
   await reload();if(key!==sessionKey)return;
+  pendAdds();
   if(prunePend())render();else actionStatus();
   let changed=false;
   for(const current of edits.values())if(current.busy&&current.sent&&Date.now()-current.requestAt>=120000){
@@ -851,7 +877,7 @@ function render(){
   $('dateMonth').textContent=`${d.getUTCFullYear()}년 ${d.getUTCMonth()+1}월`;
   $('dateDay').textContent=d.getUTCDate();
   $('dateWeekday').textContent=`${WD[d.getUTCDay()]}요일`;
-  const und=ds=>data.items.filter(x=>x.date===ds&&!dn(x)&&!x.memo).length,odAll=overdue().length;   // 맨 위 숫자는 카테고리와 상관없이 전체
+  const und=ds=>data.items.filter(x=>x.date===ds&&!gone(x.id)&&!dn(x)&&!x.memo).length,odAll=overdue().length;   // 맨 위 숫자는 카테고리와 상관없이 전체
   $('s1').textContent=und(T);$('s2').textContent=odAll;$('s3').textContent=und(addDays(T,1));$('s2w').classList.toggle('bad',odAll>0);
   const u=data.updated?new Date(data.updated):null;
   $('upd').textContent=u?`${u.getMonth()+1}/${u.getDate()} ${pad(u.getHours())}:${pad(u.getMinutes())} 기준`:'';
@@ -863,7 +889,7 @@ function render(){
   $('tn').textContent=t.length;$('nn').textContent=n.length;
   list($('tl'),t,on(T).length?'오늘 할 일을 모두 끝냈어요 ✔':'오늘은 비어 있어요');
   list($('nl'),n,'내일은 비어 있어요');
-  const rules=data.rules.filter(vis);
+  const rules=data.rules.filter(x=>vis(x)&&!gone(x.id));
   $('rn').textContent=rules.length;
   $('rl').innerHTML=rules.map(r=>`<li class="row">${editContent(r,esc(r.label),`${pill(catOf(r))}<span class="id">#${r.id}</span>`)}</li>`).join('');
   weekly();
@@ -941,22 +967,25 @@ $('qin').oninput=searchView;
 $('qf').onsubmit=e=>{e.preventDefault();$('qin').blur()};
 // 앱 알림(웹 푸시): 알림을 허락하면 이 기기의 구독 정보를 봇에게 보낸다. 알림을 보내는 쪽은 내 PC의 봇이다.
 const pushOK='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+let pushPending=0;
 const b64ud=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),c=>c.charCodeAt(0));
 async function pushState(){
   let hide=!pushOK||!data.push||!(data.done&&data.done.topic)||Notification.permission==='denied';
   try{hide=hide||localStorage.getItem('schedule-push-later')==='1'}catch(_){}
-  if(!hide){const reg=await navigator.serviceWorker.getRegistration();hide=!!(reg&&await reg.pushManager.getSubscription())}
+  if(!hide){const reg=await navigator.serviceWorker.getRegistration(),sub=reg&&await reg.pushManager.getSubscription();hide=!!(sub&&data.push.registered?.includes(hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(sub.endpoint)))));if(hide)pushPending=0}
   $('pushc').hidden=hide;
 }
 $('pushx').onclick=()=>{try{localStorage.setItem('schedule-push-later','1')}catch(_){}$('pushc').hidden=true};
 $('pushb').onclick=async()=>{
+  const sessionKey=key;$('pushb').disabled=true;
   try{
     const reg=await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;
     if(await Notification.requestPermission()!=='granted')return toast('알림이 허용되지 않았어요. 설정에서 이 앱의 알림을 켜 주세요',8000,true);
     const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ud(data.push.key)});
     await sendAct('sub',{text:JSON.stringify(sub)});
-    $('pushc').hidden=true;toast('알림을 켰어요 · 1분 안에 시험 알림이 와요',6000);
-  }catch(e){toast('알림을 켜지 못했어요: '+esc(e.message||e),8000,true)}
+    if(key!==sessionKey)return;pushPending=Date.now();$('pushb').textContent='알림 다시 연결';toast('알림 연결 요청을 보냈어요. PC 봇의 등록을 확인하고 있어요.',6000);scheduleChangeCheck(3000);
+  }catch(e){if(key===sessionKey)toast('알림을 켜지 못했어요: '+esc(e.message||e),8000,true)}
+  finally{$('pushb').disabled=false}
 };
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});   // 앱 설치·알림용
 // ── 날씨(Open-Meteo, 무료·키 없음). 위치는 암호화된 데이터 안의 wx에서 온다 ──
@@ -968,12 +997,14 @@ async function loadWeather(){
   b.hidden=false;b.disabled=true;b.removeAttribute('aria-label');
   if(!w){b.innerHTML='<span class="wx-state">날씨 지역 정보 없음</span>';$('wxp').hidden=true;b.setAttribute('aria-expanded','false');wxData=null;return}
   b.innerHTML='<span class="wx-state">날씨 불러오는 중</span>';
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
   try{
     const q=new URLSearchParams({latitude:w.lat,longitude:w.lon,timezone:'Asia/Seoul',forecast_days:7,current:'temperature_2m,apparent_temperature,weather_code',
       hourly:'temperature_2m,precipitation_probability,weather_code',daily:'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'});
-    const r=await fetch('https://api.open-meteo.com/v1/forecast?'+q);if(!r.ok)throw new Error(r.status);
+    const r=await fetch('https://api.open-meteo.com/v1/forecast?'+q,{signal:controller.signal});if(!r.ok)throw new Error(r.status);
     wxData=await r.json();wxName=w.name||'';renderWx();weekly();
   }catch(_){b.disabled=false;b.innerHTML='<span class="wx-state">날씨 다시 불러오기</span>';$('wxp').hidden=true;b.setAttribute('aria-expanded','false');wxData=null}
+  finally{clearTimeout(timeout)}
 }
 function renderWx(){
   const d=wxData.daily,c=wxData.current,h=wxData.hourly,[ic,tx]=wxi(c.weather_code).slice(1);
@@ -1051,7 +1082,7 @@ let refreshStarted=0,refreshApplied=0;
 async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용을 받는다
   const sessionKey=key;if(!sessionKey)return;
   const sequence=++refreshStarted;
-  try{const blob=await fetchBlob(),updated=await decrypt(blob,sessionKey);if(key!==sessionKey||sequence<refreshApplied)return;refreshApplied=sequence;data=updated;render()}catch(_){/* 네트워크 실패는 이전 화면 유지 */}
+  try{const blob=await fetchBlob(),updated=await decrypt(blob,sessionKey);if(key!==sessionKey||sequence<refreshApplied)return;refreshApplied=sequence;data=updated;render();pushState().catch(()=>{})}catch(_){/* 네트워크 실패는 이전 화면 유지 */}
 }
 setInterval(()=>{const t=kstToday();if(t!==T&&data){T=t;viewYM=t.slice(0,7);sel=t;weekStart=mondayOf(t);render()}},60e3);
 setInterval(()=>{if(key)loadWeather()},18e5);   // 날씨는 30분마다

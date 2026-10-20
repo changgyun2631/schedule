@@ -8,7 +8,44 @@
  
  HERE = os.path.dirname(os.path.abspath(__file__))
  DATA = os.path.join(HERE, 'todos.json')
-@@ -149,8 +150,7 @@
+@@ -74,9 +75,15 @@
+     elif m := re.match(r'(오늘|내일|모레)\s+(.*)', t):
+         day = base + dt.timedelta(('오늘', '내일', '모레').index(m[1]))
+         head, rest = f'{day.year}/{day.month}/{day.day}', m[2]
++    elif m := re.match(r'(이번\s*주|다음\s*주|다다음\s*주)?\s*([월화수목금토일])요일\s+(.*)', t):   # 요일만 쓰면 매주가 아니라 한 번
++        wd, wk = WD.index(m[2]), {None: None, '이번주': 0, '다음주': 1, '다다음주': 2}[m[1] and re.sub(r'\s', '', m[1])]
++        day = base + dt.timedelta((wd - base.weekday()) % 7) if wk is None else base - dt.timedelta(base.weekday()) + dt.timedelta(7 * wk + wd)
++        head, rest = f'{day.year}/{day.month}/{day.day}', m[3]
++    elif m := re.match(r'(매일|평일)\s*(.*)', t):    # '매일 7시반에 달리기' → '매일 07:30 달리기'
++        head, rest = m[1], m[2]
+     else:
+         return t
+-    if m := re.match(r'(오전|오후|아침|낮|저녁|밤|새벽)?\s*(\d{1,2})시\s*(?:(\d{1,2})분|(반))?\s+(.+)', rest):
++    if m := re.match(r'(오전|오후|아침|낮|저녁|밤|새벽)?\s*(\d{1,2})시\s*(?:(\d{1,2})분|(반))?\s*에?\s+(.+)', rest):
+         h, mi = int(m[2]), int(m[3] or (30 if m[4] else 0))
+         if (m[1] in ('오후', '저녁', '밤') and h < 12) or (m[1] in ('낮', None) and 1 <= h <= 6):
+             h += 12                                    # 앞말 없이 '3시' = 오후 3시
+@@ -115,6 +122,8 @@
+         return {'kind': 'monthly', 'day': d, 'text': m[2]} if 1 <= d <= 31 else None
+     if m := re.fullmatch(rf'매주\s*([{WD}])(?:요일)?\s+(.+)', t):
+         return {'kind': 'weekly', 'wd': WD.index(m[1]), 'text': m[2]}
++    if m := re.fullmatch(r'(매일|평일)\s+(.+)', t):
++        return {'kind': 'daily' if m[1] == '매일' else 'weekdays', 'text': m[2]}
+     return None
+ 
+ 
+@@ -124,6 +133,10 @@
+         return False
+     if item['kind'] == 'once':
+         return item['date'] == day.isoformat()
++    if item['kind'] == 'daily':
++        return True
++    if item['kind'] == 'weekdays':                # ponytail: 공휴일은 모름(주말만 뺀다)
++        return day.weekday() < 5
+     if item['kind'] == 'monthly':
+         nxt = (day.replace(day=1) + dt.timedelta(32)).replace(day=1)   # 1일이 주말이면 앞달 금요일에 오므로 다음 달도 본다
+         return day in (monthly_alert(day.year, day.month, item['day']), monthly_alert(nxt.year, nxt.month, item['day']))
+@@ -149,13 +162,12 @@
  
  def is_memo(item):
      """메모장 항목: 날짜 없는 메모, '#메모'로 넣은 것, 날짜가 지난 뒤에 입력한 기록. 밀린 일·완료가 없다(시각이 있으면 그 시각에 알림)."""
@@ -18,19 +55,73 @@
  
  
  def overdue(item, day):
-@@ -530,7 +530,7 @@
+     done = item.get('done_until') or ''
+-    if item.get('event') or is_memo(item):        # 경기 같은 일정과 메모는 지나도 밀린 일이 아니다
++    if item.get('event') or is_memo(item) or item['kind'] in ('daily', 'weekdays'):   # 경기·메모·매일/평일 반복은 지나도 밀린 일이 아니다
+         return False
+     if item['kind'] == 'once':
+         return not done and item['date'] < day.isoformat()
+@@ -173,6 +185,8 @@
+     if item['kind'] == 'once':
+         d = dt.date.fromisoformat(item['date'])
+         return f"{d.month}/{d.day}({WD[d.weekday()]}) {t}"
++    if item['kind'] in ('daily', 'weekdays'):
++        return f"{'매일' if item['kind'] == 'daily' else '평일'} {t}"
+     if item['kind'] == 'monthly':
+         return f"매달 {item['day']}일 {t}"
+     return f"매주 {WD[item['wd']]} {t}"
+@@ -259,6 +273,7 @@
+ 10/20 카드값 · 10/20 14:30 거래처 미팅 #업무
+ 10월 20일 오후 2시 미팅 · 20일 13시 미팅 · 내일 3시 반 회의
+ +3 반품 · 매달 25 카드값 · 매주 월 분리수거
++매일 7시반 달리기 · 평일 09:00 약 먹기
+ #메모 우유 사기 · #메모 10/24 아빠생신 [09:00]
+ 지난 날짜(10/9 …)는 메모로 저장
+ 
+@@ -341,7 +356,7 @@
+         lines += ['', f"{d.month}/{d.day}({WD[d.weekday()]}){tag}"]
+         for i in xs:
+             c = cat_of(i)
+-            rep = ' (매달)' if i['kind'] == 'monthly' else ' (매주)' if i['kind'] == 'weekly' else ''
++            rep = {'monthly': ' (매달)', 'weekly': ' (매주)', 'daily': ' (매일)', 'weekdays': ' (평일)'}.get(i['kind'], '')
+             lines.append(f"  {i['id']}. {'📝 ' if is_memo(i) else ''}{'' if c == '경기' else EMOJI[c] + ' '}"
+                          f"{i['time'] + ' ' if i.get('time') else ''}{i['text']}{rep}{early(i, d)}")
+             n += 1
+@@ -530,7 +545,7 @@
          text = str(m.get('text') or '')
      except (ValueError, KeyError, TypeError):
          return None
 -    if abs(now - ts) > 86400 or a not in (*WEB_ACTS, 'add', 'sub'):
-+    if abs(now - ts) > 86400 or a not in (*WEB_ACTS, 'add', 'sub', 'edit') or (a == 'edit' and (not i or int(i) < 1 or not text or len(text) > 10000)):
++    if abs(now - ts) > 86400 or a not in (*WEB_ACTS, 'add', 'sub', 'edit', 'create') or (a == 'edit' and (not i or int(i) < 1 or not text or len(text) > 10000)):
          return None
      sign = lambda s: hmac.new(key.encode(), s.encode(), hashlib.sha256).hexdigest()
      ok = hmac.compare_digest(sign(f'{a}|{i}|{text}|{ts}'), sig)
-@@ -576,12 +576,18 @@
+@@ -568,20 +583,38 @@
+             log('웹 요청 무시(서명·시각 불일치)')
+             continue
+         a, i, text = v['a'], v['id'], v['text']
+-        once = f"{a}{i}{hashlib.sha1(text.encode()).hexdigest()[:8]}"
++        log(f'웹 요청 {a} {i} {text!r}')              # 텔레그램 글처럼 무엇을 보냈는지 남긴다(추적용)
++        once =f"{a}{i}{hashlib.sha1(text.encode()).hexdigest()[:8]}"
+         if now - st['seen'].get(once, 0) < 120:       # 같은 요청을 연달아 누른 것
+             continue
+         st['seen'][once] = int(now)
+         try:
              if a == 'sub':
                  import alarm
-                 say(chat, alarm.add_subscription(text))
+-                say(chat, alarm.add_subscription(text))
++                message = alarm.add_subscription(text)
++                save(load())
++                say(chat, message)
++            elif a == 'create':
++                db = load()
++                def create(text):
++                    if is_command(text):
++                        raise ValueError('추가 칸에서는 일정을 적어 주세요. 삭제는 #번호 삭제해줘로 보내 주세요.')
++                    return handle(db, text, today(), persist=False)
++                result = web_edit.apply_create(db, text, create)
++                save(db)
++                say(chat, '🌐 웹 추가: ' + result['message'])
 +            elif a == 'edit':
 +                import publish
 +                db = load()
@@ -47,13 +138,86 @@
              n += 1
          except Exception as ex:
              log(f'웹 요청 {a} {i} 실패: {ex!r}')
-@@ -614,4 +620,4 @@
+@@ -592,26 +625,54 @@
+     return n
+ 
+ 
+-def ai_rewrite(text, base):
+-    """형식이 틀린 말을 Codex에게 정해진 형식 한 줄로 바꾸게 한다. 실패하면 None."""
+-    prompt = (f"오늘은 {base.isoformat()}({WD[base.weekday()]})이다. 아래 할 일을 다음 형식 중 하나로 "
+-              f"딱 한 줄만 출력하라(설명 금지): 'M/D 내용', '매달 D 내용', '매주 요일한글자 내용' (시각이 있으면 날짜 바로 뒤에 'HH:MM'). "
+-              f"날짜를 알 수 없으면 '모름'만 출력.\n할 일: {text}")
++def ask_model(prompt):
++    """언어모델에게 물어 답 글을 받는다. 구독으로 도는 claude -p 먼저, 안 되면 codex. 둘 다 안 되면 ''."""
++    claude = shutil.which('claude') or os.path.expanduser(r'~\.local\bin\claude.exe')
+     npm = os.path.join(os.environ.get('APPDATA', ''), 'npm', 'codex.cmd')
+-    cmd = [npm if os.path.exists(npm) else 'codex', 'exec', '--skip-git-repo-check', '--ephemeral',
+-           '-s', 'read-only', '-m', 'gpt-6-astra', '-c', 'model_reasoning_effort=low', '-']   # 기본 설정 모델은 계정에서 거부됨(10/16)
+-    try:
+-        out = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding='utf-8',
+-                             timeout=120, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).stdout
+-    except Exception:
+-        return None
+-    for line in reversed(out.strip().splitlines()):
+-        if item := parse(line.strip().strip("'\"`"), base):
++    for cmd, wait in (([claude, '-p', '--model', 'haiku', '--no-session-persistence', '--tools', ''], 60),
++                      ([npm if os.path.exists(npm) else 'codex', 'exec', '--skip-git-repo-check', '--ephemeral', '-s', 'read-only',
++                        '-m', 'gpt-6-astra', '-c', 'model_reasoning_effort=low', '-'], 120)):   # codex 기본 모델은 계정에서 거부됨(10/16)
++        try:
++            r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding='utf-8', timeout=wait,
++                               cwd=os.environ.get('TEMP') or HERE, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
++            if r.returncode == 0 and r.stdout.strip():
++                return r.stdout
++            log(f'모델 호출 실패({os.path.basename(cmd[0])}): {(r.stderr or r.stdout)[-150:]!r}')
++        except Exception as e:
++            log(f'모델 호출 실패({os.path.basename(cmd[0])}): {e!r}')
++    return ''
++
++
++def item_from_model(out, base):
++    """모델 답 속 JSON {kind,date,wd,day,time,text} → 검증된 할 일. 못 읽으면 None.
++    정해진 말투 한 줄로 되돌려 parse()에 다시 태우므로 날짜·시각 검증은 거기서 한다."""
++    for blob in reversed(re.findall(r'\{[^{}]*\}', out)):
++        try:
++            j = json.loads(blob)
++            k, text = j.get('kind'), str(j.get('text') or '').strip()
++            if j.get('time') and not re.fullmatch(r'(?:[01]?\d|2[0-3]):[0-5]\d', str(j['time'])):
++                continue                                          # 잘못된 시각은 글로 흘러들어가지 않게 버린다
++            t = f"{j['time']} " if j.get('time') else ''
++            line = {'once': lambda: f"{str(j['date']).replace('-', '/')} {t}{text}", 'daily': lambda: f'매일 {t}{text}', 'weekdays': lambda: f'평일 {t}{text}',
++                    'weekly': lambda: f"매주 {WD[int(j['wd'])]} {t}{text}", 'monthly': lambda: f"매달 {int(j['day'])} {t}{text}"}[k]()
++        except (ValueError, KeyError, TypeError, IndexError):
++            continue
++        if text and (item := parse(line, base)):
+             return item
+     return None
+ 
+ 
 -def handle(db, text, base):
-+def handle(db, text, base, *, occurrence=None):
++def ai_rewrite(text, base):
++    """형식이 틀린 말을 언어모델에게 구조(JSON)로 풀게 한다. 실패하면 None."""
++    cal = ' '.join(f"{d.isoformat()}({WD[d.weekday()]})" for d in (base + dt.timedelta(k) for k in range(28)))   # 모델의 요일 계산 실수 방지
++    prompt = (f"오늘은 {base.isoformat()}({WD[base.weekday()]})이다. 달력: {cal}\n날짜는 이 달력에서 찾아라. weekly·monthly·daily·weekdays는 '매주'·'매달'·'매일'·'평일'처럼 반복을 뜻하는 말이 있을 때만 쓰고, '수요일'처럼 요일·날짜만 있으면 once(오늘 이후 가장 가까운 그날)다. 아래 할 일을 JSON 한 줄로만 출력하라(설명 금지). "
++              f"키: kind(once=날짜 하나|daily=매일|weekdays=평일(월~금)|weekly=매주 요일|monthly=매달 며칠), date(YYYY-MM-DD, once만), wd(0=월~6=일, weekly만), "
++              f"day(1~31, monthly만), time(HH:MM 24시간, 없으면 null), text(날짜·시각·'추가해줘' 같은 말을 뺀 할 일 내용). "
++              f"날짜를 알 수 없으면 {{\"kind\":null}}.\n할 일: {text}")
++    return item_from_model(ask_model(prompt), base)
++
++
++def handle(db, text, base, *, occurrence=None, persist=True):
      t = text.strip()
      items = db['items']
      if m := re.fullmatch(r'(?:목록|/list)(?:\s+(\S+))?', t):
-@@ -668,7 +674,19 @@
+@@ -657,7 +718,7 @@
+             return '한 번짜리 일정만 미룰 수 있어요(반복 일정은 "완료"). 예: 미루기 17'
+         it['date'] = (base + dt.timedelta(1)).isoformat()
+         it.pop('done_until', None)
+-        save(db)
++        if persist: save(db)
+         return f'⏭ 내일로 미룸: {tlabel(it)}'
+     if m := re.fullmatch(r'(완료|삭제)\s*(\d+)', t):
+         it = next((i for i in items if i['id'] == int(m[2])), None)
+@@ -668,18 +729,30 @@
          if m[1] == '삭제':
              items.remove(it)
          else:
@@ -74,3 +238,78 @@
              log_ = db.setdefault('done_log', [])        # '@완료함'용 — 언제 끝냈는지(60일 보관)
              log_.append({'id': it['id'], 'text': tlabel(it), 'at': dt.datetime.now().isoformat(timespec='minutes'), 'day': base.isoformat()})
              db['done_log'] = [x for x in log_ if x['day'] >= (base - dt.timedelta(60)).isoformat()]
+-        save(db)
++        if persist: save(db)
+         return f"{'🗑 삭제' if m[1] == '삭제' else '✔ 완료'}: {tlabel(it)}"
+     if m := re.fullmatch(r'분류\s*(\d+)\s+(\S+)', t):
+         it = next((i for i in items if i['id'] == int(m[1])), None)
+         if not it or m[2] not in CATS:
+             return f'예: 분류 17 차량  (번호는 "목록", 카테고리는 {"·".join(CATS)})'
+         it['cat'] = m[2]
+-        save(db)
++        if persist: save(db)
+         return f'🏷 분류 바꿈: {tlabel(it)}'
+     if t in ('도움', '명령어'):
+         return HELP_TEXT
+@@ -697,6 +770,7 @@
+         else:
+             return f'카테고리는 {"·".join(CATS)}(또는 #메모) 중에서 골라 주세요. 예: 10/20 엔진오일 #차량'
+         t = (t[:m.start()] + t[m.end():]).strip()
++    t = re.sub(r'\s*(?:일정\s*)?(?:(?:추가|등록|저장)\s*해\s*(?:줘|주세요)|넣어\s*(?:줘|주세요))\s*$', '', t)   # '…추가해줘' 말투
+     if not t:
+         return '내용을 써 주세요. 예: #메모 우유 사기'
+     t = korean_date(t, base)
+@@ -719,7 +793,7 @@
+                 cat=tag or classify(item['text']))
+     db['next_id'] += 1
+     items.append(item)
+-    save(db)
++    if persist: save(db)
+     note = ''
+     if memo:
+         alarm = f" · {item['time']}에 알림" if item.get('time') and item['kind'] != 'note' else ''
+@@ -734,6 +808,8 @@
+ 
+ 
+ def log(line):
++    if SELFTEST:                                  # 자체 검사가 진짜 로그에 가짜 오류를 남기지 않게
++        return
+     with open(os.path.join(HERE, 'bot.log'), 'a', encoding='utf-8') as f:
+         f.write(f'{dt.datetime.now():%m-%d %H:%M:%S} {line}\n')
+ 
+@@ -805,7 +881,25 @@
+     assert parse('+3 반품', b)['date'] == '2026-10-19'
+     assert parse('매달 25일 카드값', b) == {'kind': 'monthly', 'day': 25, 'text': '카드값'}
+     assert parse('매주 월요일 분리수거', b)['wd'] == 0
++    assert parse('매일 07:30 달리기', b) == {'kind': 'daily', 'text': '달리기', 'time': '07:30'}
++    run = {'id': 11, 'kind': 'daily', 'text': '달리기', 'time': '07:30', 'added': '2026-10-01'}
++    assert occurs(run, b) and not overdue(run, b) and label(run) == '매일 07:30 달리기'
++    assert korean_date('매일 7시반에 달리기', b) == '매일 07:30 달리기' and korean_date('매일 달리기', b) == '매일 달리기'
+     assert parse('다음주 치과', b) is None and parse('13/1 x', b) is None
++    assert korean_date('수요일 7시반에 달리기', b) == '2026/10/21 07:30 달리기' and korean_date('수요일 달리기 일정', b) == '2026/10/21 달리기 일정'
++    assert korean_date('다음주 월요일 회의', b) == '2026/10/19 회의' and korean_date('금요일 x', b) == '2026/10/16 x'     # 금(오늘)이면 오늘
++    assert korean_date('매주 수요일 달리기', b) == '매주 수요일 달리기' and parse(korean_date('수요일 달리기', b), b)['kind'] == 'once'
++    wkd = {'id': 12, 'kind': 'weekdays', 'text': '약', 'time': '09:00', 'added': '2026-10-01'}
++    assert parse('평일 9:00 약', b)['kind'] == 'weekdays' and label(wkd) == '평일 09:00 약'
++    assert occurs(wkd, b) and not occurs(wkd, dt.date(2026, 10, 17)) and not overdue(wkd, dt.date(2026, 10, 19))   # 금 O, 토 X
++    assert korean_date('평일 아침 9시에 약 먹기', b) == '평일 09:00 약 먹기'
++    assert item_from_model('{"kind":"weekdays","time":"09:00","text":"약 먹기"}', b)['kind'] == 'weekdays'
++    fm = lambda s: item_from_model(s, b)                     # 모델 답(JSON) 풀이 — 모델은 안 부른다
++    assert fm('{"kind":"daily","time":"07:30","text":"달리기"}') == {'kind': 'daily', 'text': '달리기', 'time': '07:30'}
++    assert fm('```json\n{"kind":"once","date":"2026-10-27","time":"15:00","text":"치과"}\n```') == {'kind': 'once', 'date': '2026-10-27', 'text': '치과', 'time': '15:00'}
++    assert fm('{"kind":"weekly","wd":1,"time":null,"text":"x"}')['wd'] == 1 and fm('{"kind":"monthly","day":25,"text":"카드값"}')['day'] == 25
++    assert fm('{"kind":null}') is None and fm('모름') is None and fm('{"kind":"once","date":"2026-13-40","text":"x"}') is None
++    assert fm('{"kind":"daily","time":"25:99","text":"x"}') is None
+     m31 = {'kind': 'monthly', 'day': 31}
+     assert occurs(m31, dt.date(2026, 4, 30)) and not occurs(m31, dt.date(2026, 3, 30))   # 말일
+     assert occurs(m31, dt.date(2026, 2, 27)) and not occurs(m31, dt.date(2026, 2, 28))   # 2/28(토) → 2/27(금)
+@@ -931,6 +1025,9 @@
+         assert kd('2027년 1월 5일 저녁 7시 모임') == '2027/1/5 19:00 모임' and kd('우유 사기') == '우유 사기'
+         r = handle(db, '10월 20일 오후 2시 회의하기', b)
+         assert r.startswith('✅ 저장') and '14:00' in r and '회의하기' in r
++        r = handle(db, '매일 7시반에 달리기 일정 추가해줘', b)             # 이 말이 안 먹던 것
++        assert r.startswith('✅ 저장') and '매일 07:30 달리기' in r and db['items'][-1]['kind'] == 'daily'
++        assert '달리기' in morning_text(db['items'], b) and '달리기' in handle(db, '@오늘', b)
+         # @help·@오늘·@이번주·@밀린·@카테고리·@다음·@완료함
+         assert '@이번주' in handle(db, '@HELP', b) and handle(db, '도움', b) == HELP_TEXT == handle(db, '/start', b)
+         assert handle(db, '@오늘', b).startswith('📅 오늘 · 10/16(금)')

@@ -16,7 +16,7 @@ def is_memo(item):
 
 
 def edit_spec(item, names=None):
-    if item.get('event') or item['kind'] not in ('once', 'note', 'weekly', 'monthly') or (item['kind'] == 'once' and item.get('done_until')):
+    if item.get('event') or item['kind'] not in ('once', 'note', 'weekly', 'monthly', 'daily', 'weekdays') or (item['kind'] == 'once' and item.get('done_until')):
         return None
     return {'rev': revision(item, names), 'kind': item['kind'], 'memo': is_memo(item),
             **{k: item[k] for k in ('date', 'day', 'wd') if k in item}}
@@ -110,4 +110,32 @@ def apply_edit(db, item_id, body, names, categories):
     except ValueError as error:
         result['message'] = str(error)
     db['web_edits'] = (db.get('web_edits', []) + [result])[-30:]
+    return result
+
+
+def apply_create(db, body, create):
+    """The caller saves the item and receipt together; retries reuse the receipt."""
+    command = json.loads(body)
+    if not isinstance(command, dict) or not isinstance(command.get('rid'), str) or not re.fullmatch(r'[A-Za-z0-9_-]{10,64}', command['rid']):
+        raise ValueError('추가 요청 번호가 올바르지 않아요.')
+    rid = command['rid']
+    previous = next((r for r in db.get('web_adds', []) if r['rid'] == rid), None)
+    if previous:
+        db['web_adds'] = [r for r in db['web_adds'] if r['rid'] != rid] + [previous]
+        return previous
+    result = {'rid': rid, 'ok': False, 'at': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
+    try:
+        text = command.get('text')
+        if not isinstance(text, str) or not text.strip() or len(text) > 10000:
+            raise ValueError('추가할 내용은 1~10000자로 적어 주세요.')
+        before = db['next_id']
+        message = create(text)
+        item = next((x for x in db['items'] if x['id'] == before), None)
+        result.update(ok=item is not None, message='추가했어요.' if item else message)
+        if item:
+            result['id'] = item['id']
+    except ValueError as error:
+        result['message'] = str(error)
+    # Keep receipt identities after deletion too; a delayed retry must not recreate an item.
+    db['web_adds'] = db.get('web_adds', []) + [result]
     return result
