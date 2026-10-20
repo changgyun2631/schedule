@@ -1148,6 +1148,16 @@ test('mobile starts with actionable tasks and switches schedule views without lo
   await page.getByRole('tab', {name: '주간', exact: true}).click();
   assert.equal(await page.locator('#wkl').isVisible(), true);
   assert.equal(await page.locator('#tl').isVisible(), false);
+  for(const width of [320, 390]) {
+    await page.setViewportSize({width, height: 844});
+    const heading = await page.locator('#wkl .wd.today .wdh b').evaluate(el => {
+      const range = document.createRange(); range.selectNodeContents(el);
+      const lines = [...range.getClientRects()];
+      const column = el.parentElement.getBoundingClientRect();
+      return {lines: lines.length, fits: lines.every(rect => rect.right <= column.right + 1)};
+    });
+    assert.deepEqual(heading, {lines: 1, fits: true}, 'the current weekday and Today label stay together inside their phone column');
+  }
   await page.getByRole('tab', {name: '월간', exact: true}).click();
   assert.equal(await page.locator('#cal').isVisible(), true);
   await page.locator('#cal button[data-d="' + today + '"]').click();
@@ -1675,7 +1685,7 @@ test('phone, desktop and dark mode fit the viewport with usable controls', async
     await page.emulateMedia({colorScheme});
     const ratios = await page.evaluate(() => {
       const luminance = color => {
-        const rgb = color.match(/[\d.]+/g).slice(0, 3).map(x => {
+        const rgb = color.slice(0, 3).map(x => {
           const n = Number(x) / 255;
           return n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4;
         });
@@ -1683,9 +1693,13 @@ test('phone, desktop and dark mode fit the viewport with usable controls', async
       };
       return ['#saddf button[type=submit]', '#svoice', '.date-weekday', '#wxb', '#tl .dn', '#tl .pill'].map(selector => {
         const el = document.querySelector(selector), style = getComputedStyle(el);
-        let parent = el, bg = style.backgroundColor;
-        while (bg === 'rgba(0, 0, 0, 0)' && parent.parentElement) {parent = parent.parentElement; bg = getComputedStyle(parent).backgroundColor}
-        const a = luminance(style.color), b = luminance(bg);
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#fff'; context.fillRect(0, 0, 1, 1);
+        const layers = [];
+        for(let parent = el; parent; parent = parent.parentElement) layers.unshift(parent);
+        for(const layer of layers) {context.fillStyle = getComputedStyle(layer).backgroundColor; context.fillRect(0, 0, 1, 1)}
+        const a = luminance(style.color.match(/[\d.]+/g).slice(0, 3).map(Number)), b = luminance(Array.from(context.getImageData(0, 0, 1, 1).data));
         return {selector, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05)};
       });
     });
