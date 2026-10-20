@@ -70,6 +70,15 @@
      if item['kind'] == 'monthly':
          return f"매달 {item['day']}일 {t}"
      return f"매주 {WD[item['wd']]} {t}"
+@@ -236,7 +250,7 @@
+ 
+ 
+ def is_open(i):
+-    return not (i['kind'] == 'once' and i.get('done_until'))
++    return not i.get('archived') and not (i['kind'] == 'once' and i.get('done_until'))
+ 
+ 
+ def due(i, d):
 @@ -259,6 +273,7 @@
  10/20 카드값 · 10/20 14:30 거래처 미팅 #업무
  10월 20일 오후 2시 미팅 · 20일 13시 미팅 · 내일 3시 반 회의

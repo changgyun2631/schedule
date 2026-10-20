@@ -61,12 +61,19 @@ def apply_edit(db, item_id, body, names, categories):
             result['code'] = 'conflict'
             raise ValueError('다른 곳에서 먼저 바뀐 일정이에요. 새로고침 후 다시 수정해 주세요.')
         changes = command.get('changes')
-        if not isinstance(changes, dict) or not changes or set(changes) - {'text', 'date', 'time', 'cat', 'day', 'wd'}:
+        if not isinstance(changes, dict) or not changes or set(changes) - {'text', 'date', 'time', 'cat', 'day', 'wd', 'archived'}:
             raise ValueError('수정할 항목이 올바르지 않아요.')
         new = item.copy()
         memo = is_memo(item)
         for field, value in changes.items():
-            if field == 'text':
+            if field == 'archived':
+                if not memo or type(value) is not bool:
+                    raise ValueError('메모만 보관하거나 보관 해제할 수 있어요.')
+                if value:
+                    new['archived'] = True
+                else:
+                    new.pop('archived', None)
+            elif field == 'text':
                 if not isinstance(value, str) or not value.strip() or len(value) > 2000 or any(ord(c) < 32 and c not in '\n\t' for c in value):
                     raise ValueError('내용은 1~2000자로 적어 주세요.')
                 new['text'] = restore_names(item['text'], value.strip(), names)

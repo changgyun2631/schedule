@@ -23,4 +23,8 @@ The patches are cumulative against the original pre-edit source (UTF-8 text with
 
 Reliability: verified request timestamps are retained and interpreted in Korea time for both create and legacy add. Requests are marked consumed only after handling succeeds; reply failures do not repeat saved actions. Transient storage errors are retried on the next poll within the existing 24-hour request validity. Future one-time items beyond the repeating occurrence window remain available to search and edit. Automated publication commits only data.enc.json and leaves unrelated staged source intact.
 
-Memo weather uses the existing current-weather response, with decorative rain/snow only. It makes no extra weather requests, does not intercept input, can be switched off, and respects reduced motion. Missing or failed weather clears the effect.
+Memo weather uses the existing current-weather response, with decorative rain/snow only. It makes no extra weather requests, does not intercept input, stays enabled on the schedule and memo tabs, and respects reduced motion. Missing or failed weather clears the effect.
+
+Memo archiving uses the existing signed revision-checked edit transaction with a boolean `archived` field. Only memos accept it. Archived memos keep their text/date/time and editable metadata, remain in the encrypted memo list and search, and are excluded from live occurrences and alarms. `memo_archive: 1` advertises the capability. Restore removes the flag.
+
+Both entry forms share one speech recognition session and require explicit submission after dictation. Recent searches are deduplicated, newest first, limited to ten terms of up to 200 characters, and stored inside the existing encrypted local draft envelope. They are saved on search submission or leaving the input, and cleared with remembered-device data.

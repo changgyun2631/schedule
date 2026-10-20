@@ -156,3 +156,19 @@ class WebEditTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class MemoArchiveTest(unittest.TestCase):
+    def test_archive_restore_and_reject_nonmemo(self):
+        item={'id':1,'kind':'once','memo':True,'date':'2026-10-24','time':'09:00','text':'생신','added':'2026-10-21'}
+        db={'items':[item]}
+        def apply(value,rid):
+            return web_edit.apply_edit(db,1,json.dumps({'rid':rid,'rev':web_edit.revision(item),'changes':{'archived':value}}),{},CATS)
+        self.assertTrue(apply(True,'archive-request-001')['ok'])
+        self.assertTrue(item['archived'])
+        self.assertEqual(item['time'],'09:00')
+        self.assertTrue(apply(False,'archive-request-002')['ok'])
+        self.assertFalse(item.get('archived'))
+        item['memo']=False
+        self.assertFalse(apply(True,'archive-request-003')['ok'])
+        item['memo']=True
+        self.assertFalse(apply('yes','archive-request-004')['ok'])

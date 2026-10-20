@@ -1896,10 +1896,7 @@ test('memo weather follows current rain and snow and stays out of the input path
     if (effect) {
       assert.equal(await page.locator('#memoWeather').evaluate(el => getComputedStyle(el).pointerEvents), 'none');
       if (process.env.UI_SCREENSHOTS) await page.screenshot({path: join(process.env.UI_SCREENSHOTS, `memo-${effect}.png`)});
-      await page.locator('#memoWeatherToggle').click();
-      assert.equal(await page.locator('#memoWeather').isVisible(), false);
-      await page.locator('#memoWeatherToggle').click();
-      assert.equal(await page.locator('#memoWeather').isVisible(), true);
+      assert.equal(await page.locator('#memoWeatherToggle').count(), 0);
     }
   }
 });
@@ -1916,10 +1913,10 @@ test('memo precipitation stops for reduced motion and clears after weather failu
   await page.route('https://api.open-meteo.com/**', route => route.fulfill({status: 503}));
   await page.evaluate(() => loadWeather());
   assert.equal(await page.locator('#memoWeather').getAttribute('data-weather'), '');
-  assert.equal(await page.locator('#memoWeatherToggle').isVisible(), false);
+  assert.equal(await page.locator('#memoWeatherToggle').count(), 0);
 });
 
-test('schedule weather shares the memo toggle and never blocks schedule controls', async t => {
+test('schedule weather stays enabled without switches and never blocks schedule controls', async t => {
   const {page}=await open(t,{}, {fixture:{...weatherFixture,current:{...weatherFixture.current,weather_code:61}}});
   assert.equal(await page.locator('#scheduleWeather').count(),1);
   assert.equal(await page.locator('#scheduleWeather').isVisible(),true);
@@ -1927,14 +1924,73 @@ test('schedule weather shares the memo toggle and never blocks schedule controls
   await page.locator('#modeMonth').click();
   assert.equal(await page.locator('#monthPanel').isVisible(),true);
   if(process.env.UI_SCREENSHOTS) await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'schedule-rain.png')});
-  await page.locator('#scheduleWeatherToggle').click();
-  assert.equal(await page.locator('#scheduleWeather').isVisible(),false);
+  assert.equal(await page.locator('#scheduleWeatherToggle').count(),0);
   await page.locator('#tabM').click();
-  assert.equal(await page.locator('#memoWeather').isVisible(),false);
-  await page.locator('#memoWeatherToggle').click();
+  await page.locator('#memoWeather').waitFor({state:'visible'});
+  assert.equal(await page.locator('#memoWeatherToggle').count(),0);
   await page.locator('#tabS').click();
-  assert.equal(await page.locator('#scheduleWeather').isVisible(),true);
+  await page.locator('#scheduleWeather').waitFor({state:'visible'});
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.waitForFunction(()=>getComputedStyle(document.getElementById('scheduleWeather')).display==='none');
   assert.equal(await page.locator('#scheduleWeather').isVisible(),false);
+});
+
+test('memo voice writes only its own input and waits for confirmation', async t=>{
+  const {page,requests}=await open(t,{}, {},mockSpeech);
+  await page.locator('#tabM').click();
+  assert.equal(await page.locator('#mvoice').count(),1);
+  await page.locator('#mvoice').click();
+  await page.evaluate(()=>speechInstances[0].emit('우유 사기'));
+  assert.equal(await page.locator('#madd').inputValue(),'우유 사기');
+  if(process.env.UI_SCREENSHOTS)await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'memo-microphone.png')});
+  assert.equal(await page.locator('#sadd').inputValue(),'');
+  assert.equal(await page.locator('#maddf button[type=submit]').isDisabled(),true);
+  await page.locator('#mvoice').click();await page.evaluate(()=>speechInstances[0].onend());
+  assert.equal(requests.some(r=>r.url().includes('ntfy.sh')),false);
+  await page.locator('#maddf button[type=submit]').click();
+  await page.waitForFunction(()=>!document.getElementById('madd').value);
+  assert.match(JSON.parse(requests.find(r=>r.url().includes('ntfy.sh')).postData()).text,/#메모 우유 사기/);
+});
+
+test('recent search keeps ten deduplicated encrypted terms across reload',async t=>{
+  const {page}=await open(t);
+  await page.locator('#tabQ').click();
+  for(let i=0;i<12;i++){await page.locator('#qin').fill('검색 '+i);await page.locator('#qin').press('Enter')}
+  assert.equal(await page.locator('#recentSearches button[data-query]').count(),10);
+  await page.locator('#qin').fill('검색 5');await page.locator('#qin').press('Enter');
+  assert.equal(await page.locator('#recentSearches button[data-query]').first().innerText(),'검색 5');
+  await waitForDraft(page,d=>d.recentSearches?.[0]==='검색 5');
+  assert.doesNotMatch(await page.evaluate(()=>localStorage.getItem('schedule-drafts-v1')),/검색/);
+  await page.reload();await page.locator('#pw').fill('preview');await page.locator('#go').click();
+  await page.locator('#recentSearches button[data-query]').first().waitFor();
+  assert.equal(await page.locator('#recentSearches button[data-query]').count(),10);
+  await page.locator('#qin').fill('입력 중인 검색어');
+  await page.locator('#recentSearches button[data-query]').first().click();
+  assert.equal(await page.locator('#qin').inputValue(),'검색 5');
+  if(process.env.UI_SCREENSHOTS)await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'recent-searches.png')});
+});
+
+test('memo detail sends archive patch and renders confirmed archive separately',async t=>{
+  const payload=structuredClone(fixture);payload.memo_archive=1;
+  const {page,requests}=await open(t,{}, {payload});
+  await page.locator('#tabM').click();await page.locator('#ml2 .ed').click();
+  assert.equal(await page.locator('#editArchive').count(),1);
+  if(process.env.UI_SCREENSHOTS)await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'memo-archive-detail.png')});
+  await page.locator('#editArchive').click();
+  await page.waitForFunction(()=>document.getElementById('editState').textContent.includes('결과'));
+  const req=JSON.parse(requests.find(r=>r.url().includes('ntfy.sh')).postData());const command=JSON.parse(req.text);
+  assert.deepEqual(command.changes,{archived:true});
+  payload.memos[0].archived=true;payload.memos[0].edit.rev='d'.repeat(64);
+  payload.edit_results=[{id:8,rid:command.rid,ok:true}];
+  const blob=await encryptFixture(payload);
+  await page.context().route('**/data.enc.json?*',route=>route.fulfill({contentType:'application/json',body:blob}));
+  await page.evaluate(()=>reload());
+  assert.equal(await page.locator('#ml2 .ed').count(),0);
+  await page.locator('#archiveMemos summary').click();
+  await page.locator('#ml4 .ed').click();
+  assert.match(await page.locator('#editArchive').innerText(),/보관 해제/);
+  await page.locator('#editArchive').click();
+  await page.waitForFunction(()=>document.getElementById('editState').textContent.includes('결과'));
+  const restore=JSON.parse(requests.filter(r=>r.url().includes('ntfy.sh')).at(-1).postData());
+  assert.deepEqual(JSON.parse(restore.text).changes,{archived:false});
 });

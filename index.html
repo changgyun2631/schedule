@@ -169,7 +169,7 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .add input{width:100%;min-width:0;font-size:16px;padding:10px 12px;border:1px solid transparent;border-radius:8px;background:transparent}
 .add input::placeholder{color:var(--mut);opacity:1}
 .add button{border:0;background:var(--acc);color:var(--onacc);font-weight:600;border-radius:12px;padding:0 20px;min-height:46px;font-size:14px;white-space:nowrap}
-#saddf{grid-template-columns:minmax(0,1fr) auto auto}
+#saddf,#maddf{grid-template-columns:minmax(0,1fr) auto auto}
 .add .voice{display:grid;place-items:center;width:46px;padding:0;background:var(--accbg);color:var(--acc)}
 .add .voice[aria-pressed=true]{background:var(--redbg);color:var(--red)}
 .voice-stop,.voice[aria-pressed=true] .voice-mic{display:none}
@@ -249,16 +249,15 @@ body:has(#actions:not([hidden])) #toast{display:none}
 #vMemo,#vSch{position:relative;isolation:isolate;min-height:65vh}
 #vMemo> :not(.memo-weather),#vSch> :not(.memo-weather){position:relative;z-index:1}
 .memo-weather{position:absolute;inset:0;z-index:2;overflow:hidden;pointer-events:none;border-radius:20px;max-height:85vh;mask-image:linear-gradient(transparent,#000 12%,#000 80%,transparent)}
-#vMemo>.add,#vMemo>.mh,#vSch>.add,#vSch>.schedule-tools,#vSch>#scheduleWeatherToggle{z-index:3}
+#vMemo>.add,#vMemo>.mh,#vSch>.add,#vSch>.schedule-tools{z-index:3}
 .memo-weather i{position:absolute;top:-24px;left:var(--x);animation:memo-rain var(--duration) linear var(--delay) infinite;will-change:transform}
 .memo-weather.paused i{animation-play-state:paused}
 .memo-weather[data-weather="rain"] i{width:1.5px;height:32px;background:linear-gradient(transparent,var(--acc));opacity:.34}
 .memo-weather[data-weather="snow"] i{width:var(--size);height:var(--size);border-radius:50%;background:var(--hero-glow);box-shadow:0 0 3px #42788b66;opacity:.55;animation-name:memo-snow}
-#memoWeatherToggle,#scheduleWeatherToggle{margin-left:auto;font-size:12px;color:var(--mut);min-height:44px}
-#scheduleWeatherToggle{display:block}
 @keyframes memo-rain{to{transform:translate3d(-40px,88vh,0)}}
 @keyframes memo-snow{50%{transform:translate3d(20px,44vh,0)}to{transform:translate3d(-16px,88vh,0)}}
-@media(prefers-reduced-motion:reduce){.memo-weather,#memoWeatherToggle,#scheduleWeatherToggle{display:none!important}.memo-weather i{animation:none}}
+@media(prefers-reduced-motion:reduce){.memo-weather{display:none!important}.memo-weather i{animation:none}}
+.recent-searches{margin:12px 0 18px;color:var(--mut);font-size:13px}.recent-searches>div{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.recent-searches .chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;background:var(--card);border-color:var(--ln);margin:3px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -311,7 +310,6 @@ body:has(#actions:not([hidden])) #toast{display:none}
     <div class="wxp" id="wxp" hidden></div>
   </div>
   <div id="stale" class="warn" hidden></div>
-  <button id="scheduleWeatherToggle" class="link" type="button" aria-pressed="true" hidden>날씨 효과 끄기</button>
   <form class="add" id="saddf">
     <input id="sadd" placeholder="예: 내일 3시 미팅" autocomplete="off" enterkeyhint="send" aria-label="일정 추가" aria-describedby="svoiceState">
     <button type="button" class="voice" id="svoice" aria-label="음성으로 일정 입력" aria-pressed="false" aria-controls="sadd" aria-describedby="svoiceState"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><g class="voice-mic"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M9 22h6"/></g><rect class="voice-stop" x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></svg></button>
@@ -354,16 +352,18 @@ body:has(#actions:not([hidden])) #toast{display:none}
   </div>
   <div id="vMemo" role="tabpanel" aria-labelledby="tabM" hidden>
     <div id="memoWeather" class="memo-weather" aria-hidden="true" data-weather="" hidden></div>
-    <div class="mh"><h1>메모장</h1><span class="sub" id="msub"></span><button id="memoWeatherToggle" class="link" type="button" aria-pressed="true" hidden>날씨 효과 끄기</button></div>
-    <form class="add" id="maddf"><label for="madd">기억할 내용 추가</label><input id="madd" placeholder="예: 우유 사기" autocomplete="off" enterkeyhint="send" aria-describedby="maddhint mcommandState"><button type="submit">추가</button><span class="entry-hint" id="maddhint">알림이 필요하면 날짜와 시간을 함께 적으세요. 예: 10/24 아빠 생신 [09:00]</span><span class="entry-state" id="mcommandState" role="status" aria-live="polite" hidden></span></form>
+    <div class="mh"><h1>메모장</h1><span class="sub" id="msub"></span></div>
+    <form class="add" id="maddf"><label for="madd">기억할 내용 추가</label><input id="madd" placeholder="예: 우유 사기" autocomplete="off" enterkeyhint="send" aria-describedby="maddhint mcommandState"><button type="button" class="voice" id="mvoice" aria-label="음성으로 메모 입력" aria-pressed="false" aria-controls="madd" aria-describedby="mcommandState"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><g class="voice-mic"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M9 22h6"/></g><rect class="voice-stop" x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></svg></button><button type="submit">추가</button><span class="entry-hint" id="maddhint">알림이 필요하면 날짜와 시간을 함께 적으세요. 예: 10/24 아빠 생신 [09:00]</span><span class="entry-state" id="mcommandState" role="status" aria-live="polite" hidden></span></form>
     <div id="mpend" class="pending" hidden></div>
     <div class="card"><h2>다가오는 메모</h2><ul id="ml1"></ul></div>
     <div class="card"><h2>메모</h2><ul id="ml2"></ul></div>
     <div class="card"><details><summary>지난 기록 <span class="cnt" id="ml3n"></span></summary><ul id="ml3" style="margin-top:8px"></ul></details></div>
+    <div class="card" id="archiveMemos"><details><summary>보관한 메모 <span class="cnt" id="ml4n"></span></summary><ul id="ml4" style="margin-top:8px"></ul></details></div>
   </div>
   <div id="vSearch" role="tabpanel" aria-labelledby="tabQ" hidden>
     <div class="mh"><h1>검색</h1><span class="sub" id="qcnt"></span></div>
     <form class="add" id="qf"><label for="qin">일정과 메모에서 찾기</label><input id="qin" type="search" placeholder="내용이나 카테고리 검색" autocomplete="off" enterkeyhint="search"></form>
+    <div id="recentSearches" class="recent-searches" hidden></div>
     <div class="qmsg" id="qmsg"></div>
     <div class="card" id="qc1" hidden><h2>일정</h2><ul id="ql1"></ul></div>
     <div class="card" id="qc2" hidden><h2>반복 일정</h2><ul id="ql2"></ul></div>
@@ -375,7 +375,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
 <dialog id="editor" class="editor" aria-labelledby="editTitle">
   <form id="editForm" class="edit-form">
     <header class="edit-head"><h2 id="editTitle">일정 수정</h2><button class="edit-close" id="editClose" type="button" aria-label="수정 창 닫기">×</button></header>
-    <div class="edit-body"><fieldset id="editFields" class="edit-fields">
+    <input id="editArchived" type="hidden" value=""><div class="edit-body"><fieldset id="editFields" class="edit-fields">
       <label class="edit-wide">내용<textarea id="editText" rows="2" maxlength="2000" required autofocus></textarea></label>
       <label class="edit-wide" id="editDateWrap">날짜<span class="edit-control"><input id="editDate" type="date" min="2000-01-01" max="2100-12-31"><button id="editClearDate" class="edit-clear" type="button" aria-label="메모 날짜 지우기" hidden>×</button></span></label>
       <label class="edit-wide" id="editDayWrap" hidden>매달 날짜<input id="editDay" type="number" min="1" max="31" inputmode="numeric"></label>
@@ -384,7 +384,7 @@ body:has(#actions:not([hidden])) #toast{display:none}
       <label>분류<select id="editCat"></select></label>
       <p class="edit-note edit-wide" id="editHint" hidden></p>
     </fieldset></div>
-    <footer class="edit-foot"><p id="editDraftWarning" class="edit-state error" role="status" hidden></p><p id="editState" class="edit-state" role="status"></p><button id="editLatest" class="edit-latest" type="button" hidden>최신 내용 불러오기</button><button id="editDiscard" class="edit-latest" type="button" hidden>초안 버리기</button><button id="editSave" class="go" type="submit">저장</button></footer>
+    <footer class="edit-foot"><p id="editDraftWarning" class="edit-state error" role="status" hidden></p><p id="editState" class="edit-state" role="status"></p><button id="editLatest" class="edit-latest" type="button" hidden>최신 내용 불러오기</button><button id="editDiscard" class="edit-latest" type="button" hidden>초안 버리기</button><button id="editArchive" class="edit-latest" type="button" hidden>보관으로 보내기</button><button id="editSave" class="go" type="submit">저장</button></footer>
   </form>
 </dialog>
 <div id="toast" role="status" hidden></div>
@@ -407,6 +407,7 @@ const KEY='schedule-key-v1';
 const DRAFTS='schedule-drafts-v1',DRAFT_AAD=new TextEncoder().encode(DRAFTS);
 
 let data=null,key=null,keySalt='',T=kstToday(),viewYM=T.slice(0,7),sel=T;
+let recentSearches=[];
 let draftVersion=0,draftWrite=Promise.resolve(),draftRaw=null,draftBlocked=false;
 const mondayOf=s=>addDays(s,-((parse(s).getUTCDay()+6)%7));
 let weekStart=mondayOf(T),wxData=null,wxName='';
@@ -630,44 +631,46 @@ document.addEventListener('click',async e=>{
 });
 let voice=null;
 function entryMessage(form,message='',error=false){const state=form.querySelector('.entry-state');state.textContent=message;state.hidden=!message;state.classList.toggle('error',error)}
-function voiceMessage(message='',error=false){entryMessage($('saddf'),message,error)}
+function voiceMessage(message='',error=false){entryMessage(voice?.form||$('saddf'),message,error)}
 function entryControls(form){
   const sending=form.dataset.sending==='true';
   const button=form.querySelector('button[type=submit]');
-  button.disabled=sending||(form.id==='saddf'&&!!voice);
+  button.disabled=sending||voice?.form===form;
   button.textContent=sending?'보내는 중':deleteEnding.test(form.querySelector('input').value)?'삭제':'추가';
-  if(form.id==='saddf')$('svoice').disabled=sending||!!voice?.stopping;
+  form.querySelector('.voice').disabled=sending||(voice?.form===form&&!!voice.stopping);
 }
 function finishVoice(session,message='',error=false){
   if(voice!==session)return;
   clearTimeout(session.timer);voice=null;
-  $('svoice').setAttribute('aria-pressed','false');$('svoice').setAttribute('aria-label','음성으로 일정 입력');
-  voiceMessage(message,error);entryControls($('saddf'));
+  session.button.setAttribute('aria-pressed','false');session.button.setAttribute('aria-label',session.label);
+  entryMessage(session.form,message,error);entryControls(session.form);
 }
 function cancelVoice(){const session=voice;if(!session)return;finishVoice(session);try{session.rec.abort()}catch(_){}}
 function stopVoice(){
   const session=voice;if(!session||session.stopping)return;
-  session.stopping=true;clearTimeout(session.timer);entryControls($('saddf'));voiceMessage('음성을 텍스트로 바꾸는 중…');
+  session.stopping=true;clearTimeout(session.timer);entryControls(session.form);voiceMessage('음성을 텍스트로 바꾸는 중…');
   session.timer=setTimeout(()=>{if(voice!==session)return;finishVoice(session,'인식을 마쳤어요. 입력된 내용을 확인해 주세요.');try{session.rec.abort()}catch(_){}},5000);
   try{session.rec.stop()}catch(_){cancelVoice()}
 }
-$('svoice').onclick=()=>{
-  if(voice)return stopVoice();
-  if(!key||!data||$('saddf').dataset.sending==='true')return;
+for(const [inputId,buttonId,formId,label] of [['sadd','svoice','saddf','음성으로 일정 입력'],['madd','mvoice','maddf','음성으로 메모 입력']])$(buttonId).onclick=()=>{
+  if(voice){if(voice.form===$(formId))return stopVoice();cancelVoice()}
+  const input=$(inputId),button=$(buttonId),form=$(formId);
+  const message=(text,error=false)=>entryMessage(form,text,error);
+  if(!key||!data||form.dataset.sending==='true')return;
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!Recognition)return voiceMessage('이 브라우저는 음성 인식을 지원하지 않아요. 키보드의 마이크를 이용해 주세요.',true);
+  if(!Recognition)return message('이 브라우저는 음성 인식을 지원하지 않아요. 키보드의 마이크를 이용해 주세요.',true);
   let session;
   try{
-    const rec=new Recognition();session={rec,key,prefix:$('sadd').value.trimEnd(),heard:false};voice=session;
+    const rec=new Recognition();session={rec,key,input,button,form,label,prefix:input.value.trimEnd(),heard:false};voice=session;
     rec.lang='ko-KR';rec.interimResults=true;rec.continuous=false;rec.maxAlternatives=1;
-    $('sadd').blur();$('svoice').setAttribute('aria-pressed','true');$('svoice').setAttribute('aria-label','음성 입력 마치기');
-    voiceMessage('마이크를 켜는 중…');entryControls($('saddf'));
+    input.blur();button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','음성 입력 마치기');
+    voiceMessage('마이크를 켜는 중…');entryControls(form);
     rec.onstart=()=>{if(voice===session)voiceMessage('듣는 중… 다시 누르면 마쳐요.')};
     rec.onresult=e=>{
       if(voice!==session||key!==session.key)return;
       const text=Array.from(e.results,result=>result[0].transcript).join(' ').trim();session.heard=!!text;
-      $('sadd').value=[session.prefix,text].filter(Boolean).join(' ');
-      entryControls($('saddf'));
+      input.value=[session.prefix,text].filter(Boolean).join(' ');
+      entryControls(form);
       saveDrafts();
     };
     rec.onend=()=>finishVoice(session,session.heard?'':'음성이 들리지 않았어요. 마이크를 눌러 다시 말해 주세요.');
@@ -678,9 +681,9 @@ $('svoice').onclick=()=>{
       try{rec.abort()}catch(_){}
     };
     session.timer=setTimeout(stopVoice,60000);rec.start();
-  }catch(_){if(session){finishVoice(session,'마이크를 시작하지 못했어요. 권한을 확인한 뒤 다시 눌러 주세요.',true);try{session.rec.abort()}catch(_){}}else voiceMessage('이 브라우저에서 마이크를 시작할 수 없어요.',true)}
+  }catch(_){if(session){finishVoice(session,'마이크를 시작하지 못했어요. 권한을 확인한 뒤 다시 눌러 주세요.',true);try{session.rec.abort()}catch(_){}}else message('이 브라우저에서 마이크를 시작할 수 없어요.',true)}
 };
-$('sadd').addEventListener('input',cancelVoice);
+for(const id of ['sadd','madd'])$(id).addEventListener('input',cancelVoice);
 for(const id of ['saddf','maddf'])$(id).addEventListener('input',()=>{const form=$(id);if(form.dataset.sending!=='true'&&form.entryRequest?.uncertain)delete form.entryRequest;if(!voice)entryMessage(form);entryControls(form);saveDrafts()});
 addEventListener('pagehide',()=>{cancelVoice();saveDrafts()});
 for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=async e=>{
@@ -706,10 +709,10 @@ for(const [f,inp,memo] of [['saddf','sadd',0],['maddf','madd',1]])$(f).onsubmit=
   catch(_){request.uncertain=true;if(key===sessionKey){if(pending){pending.state='uncertain';pendAdds();scheduleChangeCheck(3000)}entryMessage(form,'전송 결과를 확인하지 못했어요. 이미 등록됐는지 확인 후 다시 시도해 주세요. 입력은 남아 있어요.',true)}}
   finally{if(form.entryRequest===request){if(!request.uncertain)delete form.entryRequest;form.dataset.sending='false';entryControls(form);saveDrafts()}}
 };
-const edits=new Map(),EDIT_FIELDS=[['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd']];
+const edits=new Map(),EDIT_FIELDS=[['editText','text'],['editDate','date'],['editTime','time'],['editCat','cat'],['editDay','day'],['editWeek','wd'],['editArchived','archived']];
 let editing=null,changeTimer;
 const editFind=id=>[...data.items,...(data.memos||[]),...data.rules].find(x=>x.id===id&&x.edit);
-const editBase=x=>({text:x.text,date:x.edit.date||'',time:x.t||'',cat:catOf(x),day:x.edit.day,wd:x.edit.wd});
+const editBase=x=>({text:x.text,date:x.edit.date||'',time:x.t||'',cat:catOf(x),day:x.edit.day,wd:x.edit.wd,archived:x.archived?'1':''});
 const editDirty=x=>EDIT_FIELDS.some(([,field])=>String(x.draft[field]??'')!==String(x.base[field]??''));
 function draftWarning(message=''){for(const id of ['draftWarning','editDraftWarning']){$(id).textContent=message;$(id).hidden=!message}}
 function saveDrafts(){
@@ -717,9 +720,9 @@ function saveDrafts(){
   if(editing)$('editDiscard').hidden=!editDirty(editing)||!!editing.command;
   if(!key||draftBlocked)return Promise.resolve();
   const sessionKey=key,version=++draftVersion;
-  const snapshot={sadd:$('sadd').value,madd:$('madd').value,edits:[...edits.values()].filter(x=>x.command||editDirty(x)),adds,
+  const snapshot={recentSearches,sadd:$('sadd').value,madd:$('madd').value,edits:[...edits.values()].filter(x=>x.command||editDirty(x)),adds,
     submitting:Object.fromEntries(['saddf','maddf'].map(id=>[id,!!$(id).entryRequest]))};
-  const plain=JSON.stringify(snapshot),hasWork=snapshot.sadd||snapshot.madd||snapshot.edits.length||adds.length||Object.values(snapshot.submitting).some(Boolean);
+  const plain=JSON.stringify(snapshot),hasWork=snapshot.sadd||snapshot.madd||snapshot.edits.length||adds.length||Object.values(snapshot.submitting).some(Boolean)||recentSearches.length;
   draftWrite=(async()=>{
     try{
       const iv=crypto.getRandomValues(new Uint8Array(12));
@@ -755,6 +758,8 @@ async function restoreDrafts(){
       restored.push({...x,busy:waiting,...(x.command&&!waiting?{error:true,message:'화면이 닫히기 전 수정의 반영을 아직 확인하지 못했어요. 내용을 확인한 뒤 다시 시도해 주세요.'}:{})});
     }
     if(saved.adds.some(x=>typeof x.text!=='string'||![0,1].includes(x.memo)||!Number.isFinite(x.ts)||(x.rid&&!/^[A-Za-z0-9_-]{10,64}$/.test(x.rid))))throw new Error('Invalid pending additions');
+    if(saved.recentSearches!==undefined&&(!Array.isArray(saved.recentSearches)||saved.recentSearches.some(x=>typeof x!=='string'||x.length>200)))throw new Error('Invalid recent searches');
+    recentSearches=(saved.recentSearches||[]).slice(0,10);
     $('sadd').value=saved.sadd;$('madd').value=saved.madd;
     for(const x of restored)edits.set(x.id,x);
     adds.push(...saved.adds.map(x=>({...x,...(x.state==='sending'?{state:'uncertain'}:{})})));
@@ -770,7 +775,7 @@ function editMessage(message,error=false,current=editing){
 }
 function editBusy(busy,current=editing){
   current.busy=busy;
-  if(editing===current){$('editFields').disabled=busy;$('editSave').disabled=busy;$('editSave').textContent=busy?'반영 확인 중':'저장'}
+  if(editing===current){$('editFields').disabled=busy;$('editSave').disabled=busy;$('editArchive').disabled=busy;$('editSave').textContent=busy?'반영 확인 중':'저장'}
   actionStatus();
 }
 function openEdit(id,fresh=false){
@@ -791,6 +796,8 @@ function openEdit(id,fresh=false){
   $('editDate').required=spec.memo?!!current.draft.time:spec.kind==='once';$('editDay').required=spec.kind==='monthly';
   $('editClearDate').hidden=!spec.memo||repeat;$('editClearTime').disabled=!current.draft.time;
   $('editHint').hidden=!repeat&&!spec.memo;$('editHint').textContent=repeat?'반복 일정 전체에 적용됩니다. 완료 기록은 유지됩니다.':'날짜를 지우면 날짜 없는 메모가 되고 알림도 해제됩니다.';
+  $('editArchive').hidden=!spec.memo||data.memo_archive!==1;
+  $('editArchive').textContent=current.draft.archived==='1'?'보관 해제':'보관으로 보내기';
   editBusy(current.busy);editMessage(current.message||'',!!current.error);
   if(!$('editor').open)$('editor').showModal();
 }
@@ -814,6 +821,7 @@ $('editClearTime').onclick=()=>{$('editTime').value='';$('editTime').oninput();s
 $('editClearDate').onclick=()=>{$('editDate').value='';$('editTime').value='';$('editTime').oninput();saveDrafts()};
 for(const event of ['input','change'])$('editForm').addEventListener(event,saveDrafts);
 $('editLatest').onclick=async()=>{const current=editing;await reload();if(editing===current){openEdit(current.id,true);saveDrafts()}};
+$('editArchive').onclick=()=>{if(!editing||editing.busy)return;$('editArchived').value=$('editArchived').value==='1'?'':'1';$('editForm').requestSubmit()};
 $('editForm').onsubmit=async e=>{
   e.preventDefault();if(!editing||editing.busy||!key)return;
   stashEdit();
@@ -822,7 +830,8 @@ $('editForm').onsubmit=async e=>{
   if(!values.text){editMessage('내용을 적어 주세요.',true);$('editText').focus();return}
   if(current.spec.kind==='monthly')values.day=+$('editDay').value;
   if(current.spec.kind==='weekly')values.wd=+$('editWeek').value;
-  for(const [field,value] of Object.entries(values))if(value!==current.base[field])changes[field]=value;
+  if(current.spec.memo&&data.memo_archive===1)values.archived=$('editArchived').value;
+  for(const [field,value] of Object.entries(values))if(value!==current.base[field])changes[field]=field==='archived'?value==='1':value;
   if(!Object.keys(changes).length){
     if(current.command)return editMessage('이전 수정의 반영을 아직 확인하지 못했어요. 내용을 확인하거나 같은 수정으로 다시 시도해 주세요.',true);
     edits.delete(current.id);editing=null;$('editor').close();actionStatus();saveDrafts();return;
@@ -918,20 +927,21 @@ function render(){
 }
 function mrow(x){
   const when=x.date?`${fmt(x.date)}${x.t?' · ⏰ '+x.t:''}`:'';
-  return `<li class="row memo">${editContent(x,esc(x.text),`${when?`<span>${esc(when)}</span>`:''}${pill(catOf(x))}<span class="id">#${x.id}</span>`)}<div class="btns"><button class="rm" data-id="${x.id}" aria-label="#${x.id} 삭제">삭제</button></div></li>`;
+  return `<li class="row memo">${editContent(x,esc(x.text),`${when?`<span>${esc(when)}</span>`:''}${pill(catOf(x))}${x.archived?'<span class="pill p-memo">보관</span>':''}<span class="id">#${x.id}</span>`)}<div class="btns"><button class="rm" data-id="${x.id}" aria-label="#${x.id} 삭제">삭제</button></div></li>`;
 }
 function list2(id,xs,empty){$(id).innerHTML=xs.length?xs.map(mrow).join(''):`<li class="empty">${empty}</li>`}
 function memoView(){
   const ms=(data.memos||[]).filter(x=>!gone(x.id));
-  const up=ms.filter(x=>x.date&&x.date>=T).sort((a,b)=>a.date.localeCompare(b.date)||(a.t||'').localeCompare(b.t||''));
-  const no=ms.filter(x=>!x.date).sort((a,b)=>b.id-a.id),past=ms.filter(x=>x.date&&x.date<T).sort((a,b)=>b.date.localeCompare(a.date));
-  $('mcnt').textContent=ms.length?' '+ms.length:'';$('msub').textContent=`${ms.length}개`;
+  const active=ms.filter(x=>!x.archived),archived=ms.filter(x=>x.archived);
+  const up=active.filter(x=>x.date&&x.date>=T).sort((a,b)=>a.date.localeCompare(b.date)||(a.t||'').localeCompare(b.t||''));
+  const no=active.filter(x=>!x.date).sort((a,b)=>b.id-a.id),past=active.filter(x=>x.date&&x.date<T).sort((a,b)=>b.date.localeCompare(a.date));
+  $('mcnt').textContent=active.length?' '+active.length:'';$('msub').textContent=`${active.length}개`;
   list2('ml1',up,'다가오는 메모가 없어요 · 예: 10/24 아빠생신 [09:00]');list2('ml2',no,'메모가 없어요 · 예: 우유 사기');list2('ml3',past,'지난 기록이 없어요');
-  $('ml3n').textContent=past.length;
+  $('ml3n').textContent=past.length;list2('ml4',archived,'보관한 메모가 없어요');$('ml4n').textContent=archived.length;
 }
 function view(){   // 주소 끝 #memo = 메모장, #search = 검색(휴대폰 뒤로가기로 일정으로 돌아온다)
   const h=location.hash,m=h==='#memo',q=h==='#search';
-  if(m||q)cancelVoice();
+  if(voice&&((m&&voice.form.id!=='maddf')||(!m&&voice.form.id==='maddf')||q))cancelVoice();
   $('vSch').hidden=m||q;$('vMemo').hidden=!m;$('vSearch').hidden=!q;
   for(const [id,on] of [['tabS',!m&&!q],['tabM',m],['tabQ',q]]){$(id).classList.toggle('on',on);$(id).setAttribute('aria-selected',String(on));$(id).tabIndex=on?0:-1}
   window.scrollTo(0,0);
@@ -963,7 +973,17 @@ document.querySelectorAll('[role=tablist]').forEach(tabs=>tabs.addEventListener(
 }));
 // 검색: 일정(한 번짜리)·반복 일정·메모에서 글자·카테고리로 찾는다. 결과에서 바로 완료·삭제
 const qn=s=>String(s).toLowerCase().replace(/\s+/g,'');
+function renderRecentSearches(){
+  $('recentSearches').hidden=!recentSearches.length;
+  $('recentSearches').innerHTML='<div>최근 검색어 <button type="button" class="link" id="clearSearches">전체 지우기</button></div>'+recentSearches.map(q=>`<button type="button" class="chip" data-query="${esc(q)}">${esc(q)}</button>`).join('');
+}
+function rememberSearch(render=true){
+  const q=$('qin').value.trim().slice(0,200);if(!q||!key)return;
+  recentSearches=[q,...recentSearches.filter(x=>x!==q)].slice(0,10);if(render)renderRecentSearches();saveDrafts();
+}
+$('recentSearches').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.id==='clearSearches'){recentSearches=[];renderRecentSearches();saveDrafts()}else if(b.dataset.query){$('qin').value=b.dataset.query;rememberSearch();searchView()}};
 function searchView(){
+  renderRecentSearches();
   if(!data)return;
   const q=qn($('qin').value),hit=(t,c)=>!!q&&(qn(t).includes(q)||qn(c)===q),seen=new Set(),once=[];
   const xs=data.items.filter(x=>x.k==='o'&&!x.memo&&!gone(x.id)&&hit(x.text,catOf(x)))
@@ -980,7 +1000,8 @@ function searchView(){
   $('qmsg').textContent=!q?'일정·반복 일정·메모에서 찾아요. 카테고리 이름(업무·미팅 등)으로도 돼요.':n?'':'맞는 게 없어요';
 }
 $('qin').oninput=searchView;
-$('qf').onsubmit=e=>{e.preventDefault();$('qin').blur()};
+$('qin').onblur=()=>rememberSearch(false);
+$('qf').onsubmit=e=>{e.preventDefault();rememberSearch();$('qin').blur()};
 // 앱 알림(웹 푸시): 알림을 허락하면 이 기기의 구독 정보를 봇에게 보낸다. 알림을 보내는 쪽은 내 PC의 봇이다.
 const pushOK='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
 let pushPending=0;
@@ -1008,22 +1029,18 @@ if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(
 const WXI=[[0,'☀️','맑음'],[1,'🌤️','대체로 맑음'],[2,'⛅','구름 조금'],[3,'☁️','흐림'],[48,'🌫️','안개'],[57,'🌦️','이슬비'],[67,'🌧️','비'],[77,'❄️','눈'],[82,'🌦️','소나기'],[86,'🌨️','눈 소나기'],[99,'⛈️','뇌우']];
 const wxi=c=>WXI.find(w=>c<=w[0])||[0,'🌡️','—'];
 const deg=n=>Math.round(n)+'°';
-let memoWeatherEnabled=true;
 function renderMemoWeather(){
   const code=wxData?.current?.weather_code;
   const effect=[71,73,75,77,85,86].includes(code)?'snow':[51,53,55,56,57,61,63,65,66,67,80,81,82,95,96,99].includes(code)?'rain':'';
   for(const prefix of ['memo','schedule']){
-  const layer=$(prefix+'Weather'),button=$(prefix+'WeatherToggle');
+  const layer=$(prefix+'Weather');
   if(layer.dataset.weather!==effect){
     layer.dataset.weather=effect;
     layer.innerHTML=effect?Array.from({length:effect==='rain'?80:20},(_,i)=>`<i style="--x:${(i*37)%100}%;--size:${3+i%4}px;--duration:${effect==='snow'?10+i%7:1.2+(i%5)*.2}s;--delay:-${i*.73}s"></i>`).join(''):'';
   }
-  layer.hidden=!effect||!memoWeatherEnabled;
-  button.hidden=!effect;button.setAttribute('aria-pressed',String(memoWeatherEnabled));
-  button.textContent=memoWeatherEnabled?'날씨 효과 끄기':'날씨 효과 켜기';
+  layer.hidden=!effect;
   }
 }
-for(const id of ['memoWeatherToggle','scheduleWeatherToggle'])$(id).onclick=()=>{memoWeatherEnabled=!memoWeatherEnabled;renderMemoWeather()};
 async function loadWeather(){
   const w=data&&data.wx,b=$('wxb');
   b.hidden=false;b.disabled=true;b.removeAttribute('aria-label');
@@ -1108,7 +1125,7 @@ $('f').onsubmit=async e=>{
     await showApp($('rem').checked);
   }catch(err){showLock(err.message)}
 };
-$('forget').onclick=()=>{draftVersion++;key=data=null;keySalt='';localStorage.removeItem(KEY);localStorage.removeItem(DRAFTS);draftRaw=null;draftBlocked=false;draftWarning();adds.length=0;for(const id of ['saddf','maddf']){delete $(id).entryRequest;$(id).dataset.sending='false';$(id).querySelector('input').value='';entryMessage($(id));entryControls($(id))}for(const timer of timers.values())clearTimeout(timer);timers.clear();for(const k of queued.keys())pend.delete(k);queued.clear();saveQueued();savePend();clearTimeout(toastTimer);$('toast').hidden=true;showLock()};
+$('forget').onclick=()=>{draftVersion++;key=data=null;keySalt='';localStorage.removeItem(KEY);localStorage.removeItem(DRAFTS);draftRaw=null;draftBlocked=false;draftWarning();adds.length=0;recentSearches=[];for(const id of ['saddf','maddf']){delete $(id).entryRequest;$(id).dataset.sending='false';$(id).querySelector('input').value='';entryMessage($(id));entryControls($(id))}for(const timer of timers.values())clearTimeout(timer);timers.clear();for(const k of queued.keys())pend.delete(k);queued.clear();saveQueued();savePend();clearTimeout(toastTimer);$('toast').hidden=true;showLock()};
 
 let refreshStarted=0,refreshApplied=0;
 async function reload(){   // 5분마다·화면으로 돌아올 때 새 내용을 받는다

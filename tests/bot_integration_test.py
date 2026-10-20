@@ -196,3 +196,24 @@ class BotPushRegistrationTest(unittest.TestCase):
                 payload=json.loads((Path(temp)/'data.enc.json').read_text(encoding='utf-8'))
                 self.assertEqual(payload['push']['registered'],[hashlib.sha256(subscription['endpoint'].encode()).hexdigest()])
                 self.assertNotIn(subscription['endpoint'],json.dumps(payload))
+
+@unittest.skipUnless(BOT_DIR, 'Set SCHEDULE_BOT_DIR')
+class MemoArchiveIntegrationTest(unittest.TestCase):
+    def test_archive_hides_occurrence_and_alarm_but_keeps_restorable_memo(self):
+        import alarm
+        item={'id':1,'kind':'once','memo':True,'date':'2026-10-24','time':'09:00','text':'생신','cat':'개인','added':'2026-10-21'}
+        db={'items':[item],'next_id':2}
+        def edit(value,rid):
+            command={'rid':rid,'rev':web_edit.revision(item),'changes':{'archived':value}}
+            self.assertTrue(web_edit.apply_edit(db,1,json.dumps(command),{},bot.CATS)['ok'])
+        edit(True,'archive-integration-001')
+        payload=publish.build_payload(db,bot.dt.date(2026,10,21),{})
+        self.assertEqual(payload.get('memo_archive'),1)
+        self.assertFalse(payload['items'])
+        self.assertTrue(payload['memos'][0]['archived'])
+        self.assertIsNotNone(payload['memos'][0]['edit'])
+        start=bot.dt.datetime(2026,10,24,8);end=bot.dt.datetime(2026,10,24,10)
+        self.assertFalse(alarm.alarms(db['items'],start,end))
+        edit(False,'archive-integration-002')
+        self.assertEqual(len(alarm.alarms(db['items'],start,end)),1)
+        self.assertEqual(item['date'],'2026-10-24')

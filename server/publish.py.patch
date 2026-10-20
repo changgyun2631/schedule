@@ -32,10 +32,10 @@
 +    rules = [{'id': i['id'], 'label': mask(bot.label(i), table), 'c': bot.cat_of(i), 'text': mask(i['text'], table), 't': i.get('time') or '', 'edit': web_edit.edit_spec(i, table)} for i in db['items'] if bot.is_open(i) and i['kind'] in ('monthly', 'weekly', 'daily', 'weekdays')]
      memos = [{'id': i['id'], 'date': i.get('date', ''), 't': i.get('time') or '', 'text': mask(i['text'], table), 'c': bot.cat_of(i),
 -              'k': i['kind'][0], 'added': i.get('added') or ''}
-+              'k': i['kind'][0], 'added': i.get('added') or '', 'edit': web_edit.edit_spec(i, table)}
++              'archived': bool(i.get('archived')), 'k': i['kind'][0], 'added': i.get('added') or '', 'edit': web_edit.edit_spec(i, table)}
               for i in db['items'] if bot.is_memo(i)]                  # 메모장 탭: 날짜 범위와 상관없이 전부
 -    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos}
-+    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos, 'edit': 1, 'done_dates': 1, 'edit_results': db.get('web_edits', []), 'add_receipts': 1, 'add_results': db.get('web_adds', [])[-30:]}
++    return {'v': 1, 'items': out, 'rules': rules, 'memos': memos, 'edit': 1, 'done_dates': 1, 'edit_results': db.get('web_edits', []), 'memo_archive': 1, 'add_receipts': 1, 'add_results': db.get('web_adds', [])[-30:]}
  
  
  def derive(pw, salt):
