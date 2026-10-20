@@ -73,7 +73,7 @@ async function open(t, options = {}, weather = {}, init) {
       if (!['index.html', 'tokens.css', 'sw.js', 'manifest.webmanifest'].includes(file) && !/^icons\/[\w.-]+$/.test(file)) return route.fulfill({status: 404});
       return route.fulfill({path: join(root, file)});
     }
-    if (url.hostname === 'api.open-meteo.com') return route.fulfill({status: weather.status || 200, contentType: 'application/json', body: JSON.stringify(weatherFixture)});
+    if (url.hostname === 'api.open-meteo.com') return route.fulfill({status: weather.status || 200, contentType: 'application/json', body: JSON.stringify(weather.fixture || weatherFixture)});
     return route.fulfill({status: 200, body: '{}'});
   });
   const page = await context.newPage();
@@ -1882,4 +1882,38 @@ test('audit fixes: deleting a recurring rule updates hero counts and rule card i
   assert.equal(Number(await page.locator('#s1').innerText()),before-1);assert.equal(await page.locator('#rn').innerText(),'0');
   assert.doesNotMatch(await page.locator('#rl').textContent(),/#7/);
   await page.locator('#actions .undo').click();assert.equal(Number(await page.locator('#s1').innerText()),before);assert.equal(await page.locator('#rn').innerText(),'1');
+});
+
+test('memo weather follows current rain and snow and stays out of the input path', async t => {
+  for (const [code, effect] of [[61, 'rain'], [85, 'snow'], [0, ''], [45, '']]) {
+    const {page} = await open(t, {}, {fixture: {...weatherFixture, current: {...weatherFixture.current, weather_code: code}}});
+    await page.locator('#tabM').click();
+    assert.equal(await page.locator('#memoWeather').count(), 1, 'memo weather layer exists');
+    assert.equal(await page.locator('#memoWeather').getAttribute('data-weather'), effect);
+    assert.equal(await page.locator('#memoWeather').getAttribute('aria-hidden'), 'true');
+    await page.locator('#madd').fill('날씨 효과 중에도 메모 입력');
+    assert.equal(await page.locator('#madd').inputValue(), '날씨 효과 중에도 메모 입력');
+    if (effect) {
+      assert.equal(await page.locator('#memoWeather').evaluate(el => getComputedStyle(el).pointerEvents), 'none');
+      if (process.env.UI_SCREENSHOTS) await page.screenshot({path: join(process.env.UI_SCREENSHOTS, `memo-${effect}.png`)});
+      await page.locator('#memoWeatherToggle').click();
+      assert.equal(await page.locator('#memoWeather').isVisible(), false);
+      await page.locator('#memoWeatherToggle').click();
+      assert.equal(await page.locator('#memoWeather').isVisible(), true);
+    }
+  }
+});
+
+test('memo precipitation stops for reduced motion and clears after weather failure', async t => {
+  const {page} = await open(t, {reducedMotion: 'reduce'}, {fixture: {...weatherFixture, current: {...weatherFixture.current, weather_code: 73}}});
+  await page.locator('#tabM').click();
+  assert.equal(await page.locator('#memoWeather').count(), 1, 'memo weather layer exists');
+  assert.equal(await page.locator('#memoWeather').isVisible(), false);
+  await page.emulateMedia({reducedMotion: 'no-preference'});
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('memoWeather')).display !== 'none');
+  assert.equal(await page.locator('#memoWeather').isVisible(), true);
+  await page.route('https://api.open-meteo.com/**', route => route.fulfill({status: 503}));
+  await page.evaluate(() => loadWeather());
+  assert.equal(await page.locator('#memoWeather').getAttribute('data-weather'), '');
+  assert.equal(await page.locator('#memoWeatherToggle').isVisible(), false);
 });

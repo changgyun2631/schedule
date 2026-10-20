@@ -87,7 +87,7 @@
              lines.append(f"  {i['id']}. {'📝 ' if is_memo(i) else ''}{'' if c == '경기' else EMOJI[c] + ' '}"
                           f"{i['time'] + ' ' if i.get('time') else ''}{i['text']}{rep}{early(i, d)}")
              n += 1
-@@ -530,7 +545,7 @@
+@@ -530,13 +545,13 @@
          text = str(m.get('text') or '')
      except (ValueError, KeyError, TypeError):
          return None
@@ -96,7 +96,21 @@
          return None
      sign = lambda s: hmac.new(key.encode(), s.encode(), hashlib.sha256).hexdigest()
      ok = hmac.compare_digest(sign(f'{a}|{i}|{text}|{ts}'), sig)
-@@ -568,20 +583,38 @@
+     if not ok and a == 'done' and i:
+         ok = hmac.compare_digest(sign(f'{i}.{ts}'), sig)
+-    return {'a': a, 'id': i, 'text': text} if ok else None
++    return {'a': a, 'id': i, 'text': text, 'ts': ts} if ok else None
+ 
+ 
+ def is_command(t):
+@@ -562,29 +577,53 @@
+     for e in fetch(f"https://ntfy.sh/{conf['topic']}/json?poll=1&since={st['t0']}"):
+         if e.get('event') != 'message' or e['id'] in st['seen']:
+             continue
+-        st['seen'][e['id']] = int(now)
+         v = ntfy_verify(e.get('message', ''), conf['key'], now)
+         if v is None:
++            st['seen'][e['id']] = int(now)
              log('웹 요청 무시(서명·시각 불일치)')
              continue
          a, i, text = v['a'], v['id'], v['text']
@@ -104,41 +118,53 @@
 +        log(f'웹 요청 {a} {i} {text!r}')              # 텔레그램 글처럼 무엇을 보냈는지 남긴다(추적용)
 +        once =f"{a}{i}{hashlib.sha1(text.encode()).hexdigest()[:8]}"
          if now - st['seen'].get(once, 0) < 120:       # 같은 요청을 연달아 누른 것
++            st['seen'][e['id']] = int(now)
              continue
-         st['seen'][once] = int(now)
+-        st['seen'][once] = int(now)
++        request_day = dt.datetime.fromtimestamp(v['ts'], dt.timezone(dt.timedelta(hours=9))).date()
          try:
              if a == 'sub':
                  import alarm
 -                say(chat, alarm.add_subscription(text))
 +                message = alarm.add_subscription(text)
 +                save(load())
-+                say(chat, message)
 +            elif a == 'create':
 +                db = load()
 +                def create(text):
 +                    if is_command(text):
 +                        raise ValueError('추가 칸에서는 일정을 적어 주세요. 삭제는 #번호 삭제해줘로 보내 주세요.')
-+                    return handle(db, text, today(), persist=False)
++                    return handle(db, text, request_day, persist=False)
 +                result = web_edit.apply_create(db, text, create)
 +                save(db)
-+                say(chat, '🌐 웹 추가: ' + result['message'])
++                message = '🌐 웹 추가: ' + result['message']
 +            elif a == 'edit':
 +                import publish
 +                db = load()
 +                result = web_edit.apply_edit(db, int(i), text, publish.names(), CATS)
 +                save(db)
-+                say(chat, '🌐 웹 수정: ' + result['message'])
++                message = '🌐 웹 수정: ' + result['message']
              elif a == 'add':
                  if is_command(text):
                      raise ValueError('웹 추가 칸으로는 명령을 보낼 수 없음')
-                 say(chat, '🌐 웹에서 ' + handle(load(), text, today()))
+-                say(chat, '🌐 웹에서 ' + handle(load(), text, today()))
++                message = '🌐 웹에서 ' + handle(load(), text, request_day)
              else:
 -                say(chat, '🌐 웹에서 ' + handle(load(), f'{WEB_ACTS[a]} {i}', today()))
-+                say(chat, '🌐 웹에서 ' + handle(load(), f'{WEB_ACTS[a]} {i}', today(), occurrence=(text or None) if a == 'done' else None))
-             n += 1
+-            n += 1
++                message = '🌐 웹에서 ' + handle(load(), f'{WEB_ACTS[a]} {i}', today(), occurrence=(text or None) if a == 'done' else None)
          except Exception as ex:
              log(f'웹 요청 {a} {i} 실패: {ex!r}')
-@@ -592,26 +625,54 @@
++            continue
++        st['seen'][e['id']] = st['seen'][once] = int(now)
++        n += 1
++        try:
++            say(chat, message)
++        except Exception as ex:
++            log(f'웹 요청 답장 실패: {ex!r}')
+     st['seen'] = {k: v for k, v in st['seen'].items() if now - v < 172800}   # 이틀 지난 기록은 버린다
+     with open(NTFY_STATE + '.tmp', 'w', encoding='utf-8') as f:
+         json.dump(st, f)
+@@ -592,26 +631,54 @@
      return n
  
  
@@ -208,7 +234,7 @@
      t = text.strip()
      items = db['items']
      if m := re.fullmatch(r'(?:목록|/list)(?:\s+(\S+))?', t):
-@@ -657,7 +718,7 @@
+@@ -657,7 +724,7 @@
              return '한 번짜리 일정만 미룰 수 있어요(반복 일정은 "완료"). 예: 미루기 17'
          it['date'] = (base + dt.timedelta(1)).isoformat()
          it.pop('done_until', None)
@@ -217,7 +243,7 @@
          return f'⏭ 내일로 미룸: {tlabel(it)}'
      if m := re.fullmatch(r'(완료|삭제)\s*(\d+)', t):
          it = next((i for i in items if i['id'] == int(m[2])), None)
-@@ -668,18 +729,30 @@
+@@ -668,18 +735,30 @@
          if m[1] == '삭제':
              items.remove(it)
          else:
@@ -251,7 +277,7 @@
          return f'🏷 분류 바꿈: {tlabel(it)}'
      if t in ('도움', '명령어'):
          return HELP_TEXT
-@@ -697,6 +770,7 @@
+@@ -697,6 +776,7 @@
          else:
              return f'카테고리는 {"·".join(CATS)}(또는 #메모) 중에서 골라 주세요. 예: 10/20 엔진오일 #차량'
          t = (t[:m.start()] + t[m.end():]).strip()
@@ -259,7 +285,7 @@
      if not t:
          return '내용을 써 주세요. 예: #메모 우유 사기'
      t = korean_date(t, base)
-@@ -719,7 +793,7 @@
+@@ -719,7 +799,7 @@
                  cat=tag or classify(item['text']))
      db['next_id'] += 1
      items.append(item)
@@ -268,7 +294,7 @@
      note = ''
      if memo:
          alarm = f" · {item['time']}에 알림" if item.get('time') and item['kind'] != 'note' else ''
-@@ -734,6 +808,8 @@
+@@ -734,6 +814,8 @@
  
  
  def log(line):
@@ -277,7 +303,7 @@
      with open(os.path.join(HERE, 'bot.log'), 'a', encoding='utf-8') as f:
          f.write(f'{dt.datetime.now():%m-%d %H:%M:%S} {line}\n')
  
-@@ -805,7 +881,25 @@
+@@ -805,7 +887,25 @@
      assert parse('+3 반품', b)['date'] == '2026-10-19'
      assert parse('매달 25일 카드값', b) == {'kind': 'monthly', 'day': 25, 'text': '카드값'}
      assert parse('매주 월요일 분리수거', b)['wd'] == 0
@@ -303,7 +329,7 @@
      m31 = {'kind': 'monthly', 'day': 31}
      assert occurs(m31, dt.date(2026, 4, 30)) and not occurs(m31, dt.date(2026, 3, 30))   # 말일
      assert occurs(m31, dt.date(2026, 2, 27)) and not occurs(m31, dt.date(2026, 2, 28))   # 2/28(토) → 2/27(금)
-@@ -931,6 +1025,9 @@
+@@ -931,6 +1031,9 @@
          assert kd('2027년 1월 5일 저녁 7시 모임') == '2027/1/5 19:00 모임' and kd('우유 사기') == '우유 사기'
          r = handle(db, '10월 20일 오후 2시 회의하기', b)
          assert r.startswith('✅ 저장') and '14:00' in r and '회의하기' in r
@@ -313,3 +339,12 @@
          # @help·@오늘·@이번주·@밀린·@카테고리·@다음·@완료함
          assert '@이번주' in handle(db, '@HELP', b) and handle(db, '도움', b) == HELP_TEXT == handle(db, '/start', b)
          assert handle(db, '@오늘', b).startswith('📅 오늘 · 10/16(금)')
+@@ -963,7 +1066,7 @@
+         key = ntfy_conf()['key']
+         now = 1_800_000_000
+         mk = lambda i, ts, k=key: json.dumps({'a': 'done', 'id': i, 'ts': ts, 'sig': hmac.new(k.encode(), f'{i}.{ts}'.encode(), hashlib.sha256).hexdigest()})
+-        assert ntfy_verify(mk(1, now), key, now) == {'a': 'done', 'id': '1', 'text': ''}       # 예전 화면의 서명도 받는다
++        assert ntfy_verify(mk(1, now), key, now) == {'a': 'done', 'id': '1', 'text': '', 'ts': now}       # 예전 화면의 서명도 받는다
+         assert ntfy_verify(mk(1, now), 'x' * 20, now) is None and ntfy_verify(mk(1, now - 90000), key, now) is None and ntfy_verify('not json', key, now) is None
+         forged = json.loads(mk(1, now)); forged['id'] = 2
+         assert ntfy_verify(json.dumps(forged), key, now) is None                        # 번호를 바꾸면 서명이 안 맞는다

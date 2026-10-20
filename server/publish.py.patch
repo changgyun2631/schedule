@@ -8,12 +8,14 @@
  
  HERE = os.path.dirname(os.path.abspath(__file__))
  SITE = os.path.join(os.path.expanduser('~'), 'Desktop', '일정관리')
-@@ -61,22 +62,23 @@
+@@ -61,22 +62,25 @@
          if not bot.is_open(it):
              continue
          done_until = it.get('done_until') or ''
 +        edit = web_edit.edit_spec(it, table)
          days = [start + dt.timedelta(k) for k in range((end - start).days + 1)]
++        if it['kind'] == 'once' and dt.date.fromisoformat(it['date']) > end:
++            days.append(dt.date.fromisoformat(it['date']))
          if it['kind'] == 'once' and not done_until and not bot.is_memo(it) and dt.date.fromisoformat(it['date']) < start:
              days.append(dt.date.fromisoformat(it['date']))        # 오래 밀린 한 번짜리도 보인다
          for d in days:
@@ -37,7 +39,7 @@
  
  
  def derive(pw, salt):
-@@ -120,7 +122,7 @@
+@@ -120,7 +124,7 @@
      c = bot.ntfy_conf()                           # 웹 '완료' 버튼용 비밀 주소·서명 열쇠(완료 요청만 보낼 수 있다). 암호문 안에만 들어간다
      payload['done'] = {'topic': c['topic'], 'key': c['key']}
      import alarm                                  # 앱 알림을 켤 때 쓰는 공개키(비밀 아님 — 비밀 열쇠는 이 PC의 vapid.json에만)
@@ -46,3 +48,12 @@
      st = state()
      digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode('utf-8')
                              + hashlib.sha256(pw.encode('utf-8')).digest()).hexdigest()   # 비밀번호가 바뀌어도 다시 올린다
+@@ -133,7 +137,7 @@
+         json.dump(blob, f)
+     git('add', 'data.enc.json')
+     if git('status', '--porcelain', 'data.enc.json').strip():
+-        git('commit', '-m', f"update {payload['updated']}")
++        git('commit', '--only', '-m', f"update {payload['updated']}", '--', 'data.enc.json')
+         git('push', 'origin', 'main')
+     st['digest'] = digest
+     with open(STATE, 'w', encoding='utf-8') as f:
