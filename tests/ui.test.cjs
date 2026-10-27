@@ -1669,7 +1669,7 @@ test('phone, desktop and dark mode fit the viewport with usable controls', async
     await page.setViewportSize({width, height: 900});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `no overflow at ${width}px`);
     const button = await page.locator('#tl .dn').first().boundingBox();
-    assert.ok(button.height >= (width < 768 ? 24 : 44), 'completion button keeps a usable touch target');   // 폰의 액션 막대는 일부러 24px로 얇게
+    assert.ok(button.height >= (width < 768 ? 28 : 44), 'completion button keeps a usable touch target');   // 폰의 액션 막대는 일부러 28px로 얇게
     for (const mode of ['주간', '월간']) {
       await page.getByRole('tab', {name: mode, exact: true}).click();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${mode} fits at ${width}px`);
@@ -1771,7 +1771,8 @@ test('landscape phones keep the bottom navigation and fit every screen', async t
 
 test('short portrait phones show the first task before scrolling', async t => {
   const {page} = await open(t, {isMobile: true, hasTouch: true, viewport: {width: 320, height: 568}});
-  const firstTask = await page.locator('#tl .dn').first().boundingBox(), nav = await page.locator('.tabs').boundingBox();
+  assert.equal(await page.locator('#tl .dn').first().isVisible(), false, 'touch phones hide the actions until 수정 is tapped');
+  const firstTask = await page.locator('#tl .mo').first().boundingBox(), nav = await page.locator('.tabs').boundingBox();
   if (process.env.UI_SCREENSHOTS) await page.screenshot({animations: 'disabled', path: join(process.env.UI_SCREENSHOTS, 'mobile-small.png')});
   assert.ok(firstTask.y + firstTask.height <= nav.y, `first task ends at ${firstTask.y + firstTask.height}, above navigation at ${nav.y} on a small phone`);
 });
@@ -1782,6 +1783,7 @@ test('short mobile viewports keep the focused input and task actions above navig
   let control = await page.locator('#sadd').boundingBox(), nav = await page.locator('.tabs').boundingBox();
   assert.ok(control.y >= 0 && control.y + control.height <= nav.y, 'focused input clears the navigation');
   await page.getByRole('tab', {name: '월간', exact: true}).tap();
+  await page.locator('#dayl .mo').last().tap();
   await page.locator('#dayl .rm').last().focus();
   control = await page.locator('#dayl .rm').last().boundingBox();
   nav = await page.locator('.tabs').boundingBox();
@@ -2026,4 +2028,16 @@ test('memo tools save pin and checklist, toggle an item, and convert without cop
   assert.equal(await page.locator('#nl .memo-check').count(),2);
   await page.locator('#tabQ').click();await page.locator('#qin').fill('우유');
   assert.equal(await page.locator('#ql1 .ed[data-id="8"]').count(),1);
+});
+
+test('touch phones reveal complete, snooze and delete only after tapping 수정', async t => {
+  const {page} = await open(t, {isMobile: true, hasTouch: true});
+  const done = page.locator('#tl .dn[data-id="1"]'), toggle = page.locator('#tl .mo[data-id="1"]');
+  assert.equal(await done.isVisible(), false, 'a scroll cannot hit 완료 while it is hidden');
+  await toggle.tap();
+  assert.equal(await done.isVisible(), true);
+  assert.equal(await page.locator('#tl .sn[data-id="1"]').isVisible() && await page.locator('#tl .rm[data-id="1"]').isVisible(), true);
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  await toggle.tap();
+  assert.equal(await done.isVisible(), false);
 });

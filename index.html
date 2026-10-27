@@ -232,7 +232,16 @@ body:has(#actions:not([hidden])) #toast{display:none}
 }
 @media(max-width:767px) and (min-height:701px){   /* 세로가 넉넉한 폰: 액션 막대를 제목 아래 한 줄로 */
   .row:has(.btns>:nth-child(2)){grid-template-columns:minmax(0,1fr);gap:10px}
-  .row:has(.btns>:nth-child(2)) .btns{align-self:stretch}.row:has(.btns>:nth-child(2)) .btns>button{flex:1;min-height:24px;font-size:12px}
+  .row:has(.btns>:nth-child(2)) .btns{align-self:stretch}.row:has(.btns>:nth-child(2)) .btns>button{flex:1;min-height:28px;font-size:12px}
+}
+.mo{display:none}
+@media(pointer:coarse) and (max-width:767px){   /* 터치 폰: 수정 버튼을 눌러야 완료·내일로·삭제가 펼쳐진다 */
+  .mo{display:block;align-self:start;min-height:28px;padding:0 12px;border:0;border-radius:8px;background:var(--bg);color:var(--mut);font-size:12px;font-weight:500}
+  .mo[aria-expanded=true]{background:var(--accbg);color:var(--acc)}
+  .row.mo-row:has(.btns){grid-template-columns:minmax(0,1fr) auto;gap:10px 12px}
+  .row.mo-row .btns{display:none;grid-column:1/-1;align-self:stretch}
+  .row.mo-row.open .btns{display:flex}
+  .row.mo-row .btns>button{flex:1;min-height:28px;font-size:12px}
 }
 @media(max-width:359px){#monthPanel{margin-left:-12px;margin-right:-12px;padding-left:0;padding-right:0}}
 @media(max-width:767px) and (max-height:700px) and (pointer:coarse){
@@ -461,9 +470,11 @@ function row(x,opt={}){
   const rec=x.k&&x.k!=='o';
   const del=opt.del&&!x.ev?`<button class="rm" data-id="${x.id}"${rec?' data-rec="1"':''} aria-label="#${x.id} ${rec?'반복 일정 전체 ':''}삭제">${rec?'반복 삭제':'삭제'}</button>`:'';
   const btn=done||snz||del?`<div class="btns">${done}${snz}${del}</div>`:'';
+  const open=openRows.has(x.id),mo=btn?`<button class="mo" data-id="${x.id}" aria-expanded="${open}" aria-label="#${x.id} 완료·내일로·삭제 열기">수정</button>`:'';   // 폰에서는 이 버튼을 눌러야 완료·내일로·삭제가 보인다(스크롤 중 오터치 방지)
   const tm=x.t?`<b class="tm">${esc(x.t)}</b> `:'';
-  return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}${x.memo?' memo':''}">${editContent(x,`${tm}${esc(x.text)}`,`${x.memo?'<span class="pill p-memo">메모</span> ':''}${pill(catOf(x))}${meta?`<span>${esc(meta)}</span>`:''}<span class="id">#${x.id}</span>`)}${btn}</li>`;
+  return `<li class="row${dn(x)?' done':''}${x.ev?' ev':''}${x.memo?' memo':''}${btn?' mo-row':''}${open?' open':''}">${editContent(x,`${tm}${esc(x.text)}`,`${x.memo?'<span class="pill p-memo">메모</span> ':''}${pill(catOf(x))}${meta?`<span>${esc(meta)}</span>`:''}<span class="id">#${x.id}</span>`)}${mo}${btn}</li>`;
 }
+const openRows=new Set();
 function editContent(x,text,meta=''){
   const can=data.edit===1&&x.edit&&!dn(x)&&!changing(x.id);
   const content=`<span class="tx">${text}${can?'<svg class="icon edit-icon" aria-hidden="true"><use href="#i-edit"/></svg>':''}</span>${meta?`<span class="mt">${meta}</span>`:''}`;
@@ -572,7 +583,10 @@ document.addEventListener('click',e=>{
   if(check){if(check.getAttribute('aria-disabled')==='true')return;check.setAttribute('aria-disabled','true');reload().finally(()=>{check.removeAttribute('aria-disabled');scheduleChangeCheck()});return}
   const u=e.target.closest('.undo');
   if(u){const k=u.dataset.k;if(queued.get(k)?.state!=='queued')return;clearTimeout(timers.get(k));timers.delete(k);queued.delete(k);pend.delete(k);saveQueued();savePend();$('toast').hidden=true;render();return}
+  const mo=e.target.closest('.mo');
+  if(mo){const id=+mo.dataset.id,on=!openRows.has(id);on?openRows.add(id):openRows.delete(id);mo.setAttribute('aria-expanded',on);mo.closest('.row').classList.toggle('open',on);return}
   const b=e.target.closest('.dn,.sn,.rm');if(!b)return;
+  openRows.delete(+b.dataset.id);
   queueAction(b.classList.contains('dn')?'done':b.classList.contains('sn')?'snooze':'del',+b.dataset.id,b.dataset.d,!!b.dataset.rec);
 });
 const deleteEnding=/\s*(?:삭제|제거)\s*해\s*줘[.!?。]*\s*$/;
