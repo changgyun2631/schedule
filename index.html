@@ -929,20 +929,20 @@ function render(){
   const age=u?Math.floor((Date.now()-u)/864e5):0;
   $('stale').hidden=age<3;$('stale').textContent=`⚠ ${age}일째 새 내용이 안 올라왔어요(PC가 꺼져 있을 수 있어요). 날짜는 맞게 표시됩니다.`;
   chips();
-  const od=overdue().filter(vis);$('od').hidden=!od.length;$('odn').textContent=od.length;list($('odl'),od,'',{date:1,ago:1});
+  const od=overdue().filter(vis);$('od').hidden=!od.length;$('odn').textContent=od.length;list($('odl'),od,'',{date:1,ago:1,del:1});
   const t=on(T).filter(x=>!dn(x)),n=on(addDays(T,1)).filter(x=>!dn(x));
   $('tn').textContent=t.length;$('nn').textContent=n.length;
-  list($('tl'),t,on(T).length?'오늘 할 일을 모두 끝냈어요 ✔':'오늘은 비어 있어요');
-  list($('nl'),n,'내일은 비어 있어요');
+  list($('tl'),t,on(T).length?'오늘 할 일을 모두 끝냈어요 ✔':'오늘은 비어 있어요',{del:1});
+  list($('nl'),n,'내일은 비어 있어요',{del:1});
   const rules=data.rules.filter(x=>vis(x)&&!gone(x.id));
   $('rn').textContent=rules.length;
-  $('rl').innerHTML=rules.map(r=>`<li class="row">${editContent(r,esc(r.label),`${pill(catOf(r))}<span class="id">#${r.id}</span>`)}</li>`).join('');
+  $('rl').innerHTML=rules.map(r=>`<li class="row">${editContent(r,esc(r.label),`${pill(catOf(r))}<span class="id">#${r.id}</span>`)}<div class="btns"><button class="rm" data-id="${r.id}" data-rec="1" aria-label="#${r.id} 반복 일정 전체 삭제">반복 삭제</button></div></li>`).join('');
   weekly();
   calendar();
   memoView();
   pendAdds();
   if(location.hash==='#search')searchView();
-  $('editHelp').textContent=data.edit===1?'내용을 누르면 수정할 수 있어요. 완료·내일로는 오른쪽 버튼에서.':'추가·완료·미루기·삭제는 여기서, 분류 변경은 텔레그램에서 할 수 있어요.';
+  $('editHelp').textContent=data.edit===1?'내용을 누르면 수정할 수 있어요. 완료·내일로·삭제는 오른쪽 버튼에서.':'추가·완료·미루기·삭제는 여기서, 분류 변경은 텔레그램에서 할 수 있어요.';
   editResult();
 }
 function mrow(x){
