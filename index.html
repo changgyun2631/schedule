@@ -178,9 +178,12 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;align-content:cen
 .entry-state.error{color:var(--red)}
 .entry-hint{grid-column:1/-1;color:var(--mut);font-size:12px}
 .add button:disabled{opacity:.6}
-.btns{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;max-width:108px}
-.sn,.rm{border:1px solid var(--ln);background:transparent;font-weight:500;font-size:12px;border-radius:8px;min-height:44px;min-width:44px;padding:0 8px;white-space:nowrap;color:var(--mut)}
-.rm{color:var(--red)}
+.btns{display:flex;align-self:start;overflow:hidden;border-radius:10px;background:var(--bg)}
+.btns>button{flex:1 0 auto;min-height:44px;min-width:44px;padding:0 12px;border:0;border-radius:0;background:transparent;color:var(--mut);font-size:13px;font-weight:500;white-space:nowrap}
+.btns>button+button{border-left:1px solid var(--ln)}
+.btns>.dn{background:transparent;color:var(--acc);font-weight:600}
+.btns>.rm{color:var(--red);opacity:.85}
+.id{opacity:.75}
 .push{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .push span{flex:1;min-width:12em}
 .push{margin-top:16px;font-size:14px}
@@ -221,12 +224,15 @@ body:has(#actions:not([hidden])) #toast{display:none}
   .focus-layout{grid-template-columns:minmax(0,1fr);gap:0}.card{padding:16px;margin-bottom:12px}.calendar-card{padding:16px 8px}.calendar-card h2,.calendar-card .day{margin-left:8px;margin-right:8px}
   .add{padding:8px;gap:4px}.add button{padding:0 16px}.add input{padding:10px 8px;font-size:16px}.entry-hint{font-size:12px}
   .row{gap:12px;padding:14px 0}.tx{font-size:16px;word-break:keep-all}.wdh{font-size:12px}.wdh b{font-size:14px;white-space:nowrap}.wk .wd{grid-template-columns:3.8em minmax(0,1fr)}
-  .btns{gap:8px;max-width:112px}
   .editor{width:100%;max-width:100%;max-height:calc(100dvh - env(safe-area-inset-top) - 12px);margin:0;inset:auto 0 0;border-radius:24px 24px 0 0}
   .edit-form{max-height:calc(100dvh - env(safe-area-inset-top) - 12px)}.edit-head{padding:12px 20px}.edit-fields{padding:16px 20px}.edit-foot{padding:12px 20px calc(16px + env(safe-area-inset-bottom))}
   .cal-h b{min-width:0;text-align:center;font-size:16px;line-height:1.5}
   .dr{grid-template-columns:2.2em 1.4em minmax(0,1fr);gap:4px}.dr>span:last-child{grid-column:2/-1;font-size:12px}
   #toast,.action-status{left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));bottom:calc(84px + env(safe-area-inset-bottom))}.lock{padding:24px;margin-top:8vh}.mh{margin-top:24px}
+}
+@media(max-width:767px) and (min-height:701px){   /* 세로가 넉넉한 폰: 액션 막대를 제목 아래 한 줄로 */
+  .row:has(.btns>:nth-child(2)){grid-template-columns:minmax(0,1fr);gap:10px}
+  .row:has(.btns>:nth-child(2)) .btns{align-self:stretch}.row:has(.btns>:nth-child(2)) .btns>button{flex:1;min-height:24px;font-size:12px}
 }
 @media(max-width:359px){#monthPanel{margin-left:-12px;margin-right:-12px;padding-left:0;padding-right:0}}
 @media(max-width:767px) and (max-height:700px) and (pointer:coarse){

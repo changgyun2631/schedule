@@ -1669,7 +1669,7 @@ test('phone, desktop and dark mode fit the viewport with usable controls', async
     await page.setViewportSize({width, height: 900});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `no overflow at ${width}px`);
     const button = await page.locator('#tl .dn').first().boundingBox();
-    assert.ok(button.height >= 44, 'completion button has a 44px touch target');
+    assert.ok(button.height >= (width < 768 ? 24 : 44), 'completion button keeps a usable touch target');   // 폰의 액션 막대는 일부러 24px로 얇게
     for (const mode of ['주간', '월간']) {
       await page.getByRole('tab', {name: mode, exact: true}).click();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${mode} fits at ${width}px`);
